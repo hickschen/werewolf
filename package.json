@@ -1,0 +1,25 @@
+{
+  "name": "werewolf-online",
+  "version": "1.0.0",
+  "description": "可連線的狼人殺網頁遊戲（手機、電腦皆可玩）",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "online": "node online.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  },
+  "optionalDependencies": {
+    "cloudflared": "^0.7.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
+}
