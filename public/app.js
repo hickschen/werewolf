@@ -45,6 +45,8 @@
   let activeTab = 'chat';
   let seenChat = 0;
   let sound = load('ww_sound') === '1';
+  let publicUrl = null; // NAS 外網網址（如果有）
+  fetch('/api/public-url').then((r) => r.json()).then((j) => { publicUrl = j.url; if (S) render(); }).catch(() => {});
 
   function load(k) { try { return localStorage.getItem(k); } catch { return null; } }
   function save(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
@@ -258,7 +260,10 @@
       return;
     }
     if (S.phase !== 'lobby') { el.innerHTML = ''; return; }
-    const link = `${location.origin}/?room=${S.code}`;
+    const base = publicUrl && publicUrl !== location.origin ? publicUrl : location.origin;
+    const link = `${base}/?room=${S.code}`;
+    const netNote = publicUrl && publicUrl !== location.origin
+      ? `<div class="setup-line">🌐 外網網址：${esc(publicUrl)}（邀請連結已自動使用這個網址）</div>` : '';
     const s = S.settings, su = S.setup;
     const sw = (k, on) => `<button class="switch ${on ? 'on' : ''}" data-action="setting" data-key="${k}" data-val="${!on}" aria-label="${k}"></button>`;
     const setupLine = `狼人 ×${su.wolves}${su.seer ? '、預言家' : ''}${su.witch ? '、女巫' : ''}${su.hunter ? '、獵人' : ''}、村民 ×${Math.max(0, su.villagers)}`;
@@ -282,7 +287,7 @@
     }
     el.innerHTML = `<div class="invite"><div>
         <div class="setup-line">房號</div><div class="big-code">${S.code}</div>
-        <button class="btn small" data-action="copy" data-link="${esc(link)}">複製邀請連結</button>
+        <button class="btn small" data-action="copy" data-link="${esc(link)}">複製邀請連結</button>${netNote}
       </div><img alt="掃描加入" src="/qr?text=${encodeURIComponent(link)}"></div>${settings}`;
   }
 

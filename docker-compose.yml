@@ -1,0 +1,26 @@
+# 月夜狼人殺：QNAP / Synology / 任何有 Docker 的機器都能用
+# 把整個專案資料夾放到 NAS 的 /share/Container/werewolf（QNAP 預設位置），
+# 若放在別處，請修改下面 volumes 的左半邊路徑。
+services:
+  werewolf:
+    image: node:22-alpine
+    container_name: werewolf
+    working_dir: /app
+    volumes:
+      - /share/Container/werewolf:/app
+    command: sh -c "npm install --omit=optional --no-audit --no-fund && node server.js"
+    environment:
+      - PORT=3000
+      - TUNNEL_METRICS=http://werewolf-tunnel:2000
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # Cloudflare 免費通道：自動產生一個外網網址（NAS 重開機後網址會改變）
+  werewolf-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: werewolf-tunnel
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 --url http://werewolf:3000
+    depends_on:
+      - werewolf
+    restart: unless-stopped

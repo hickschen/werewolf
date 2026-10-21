@@ -23,6 +23,19 @@
 2. 視窗中會顯示 `http://192.168.x.x:3000` 這樣的網址，手機連同一個 Wi-Fi 打開它即可。
 3. 如果 Windows 跳出防火牆提示，請按「允許存取」。
 
+## 放在 QNAP NAS 上（24 小時開著，不用開電腦）
+
+1. **安裝 Container Station**：打開 NAS 的 App Center，搜尋並安裝「Container Station」。裝好後 NAS 會多出一個叫 `Container` 的共用資料夾。
+2. **複製遊戲檔案**：用 File Station 或 Windows 檔案總管（`\\NAS的名稱\Container`），在 `Container` 裡建立 `werewolf` 資料夾，把這個專案的所有檔案複製進去（`node_modules` 資料夾不用複製）。
+3. **建立應用程式**：打開 Container Station →「應用程式」→「建立」。名稱填 `werewolf`，把 `docker-compose.yml` 的內容整個貼上，按「建立」。
+4. **等它啟動**：第一次要下載和安裝，大約 1–3 分鐘。
+5. **開始玩**：在家裡用 `http://NAS的IP:3000` 打開遊戲並建立房間。大廳會顯示「🌐 外網網址」，邀請連結也會自動使用外網網址，直接傳給朋友即可。
+
+- 如果大廳沒有顯示外網網址：到 Container Station →「容器」→ `werewolf-tunnel` →「日誌」，找到 `https://….trycloudflare.com` 那一行。
+- NAS 重開機或容器重啟後，外網網址會改變，重新打開大廳看新網址即可。
+- 如果 3000 埠已被別的程式使用，把 `docker-compose.yml` 裡的 `"3000:3000"` 改成例如 `"3300:3000"`，改用 `http://NAS的IP:3300`。
+- 更新遊戲：把新檔案覆蓋到 NAS 的 `werewolf` 資料夾，再到 Container Station 把 `werewolf` 容器「重新啟動」。
+
 ## 遊戲規則
 
 - **角色**：狼人、村民、預言家、女巫、獵人（4–12 人，可以依人數自動配置，也可以讓房主自訂）。
@@ -47,6 +60,7 @@
 | `game.js` | 遊戲規則與流程（法官） |
 | `server.js` | 連線伺服器（Express + Socket.IO） |
 | `online.js` | 啟動伺服器並建立 Cloudflare 外網通道 |
+| `docker-compose.yml` | NAS／Docker 用的設定（遊戲 + Cloudflare 通道） |
 | `public/` | 網頁畫面（`index.html`、`style.css`、`app.js`） |
 | `test/bots.js` | 用模擬玩家自動跑完整局的測試 |
 

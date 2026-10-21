@@ -22,6 +22,22 @@ app.get('/qr', async (req, res) => {
     res.status(400).end();
   }
 });
+// 在 NAS（Docker）上搭配 cloudflared 時，自動取得目前的外網網址
+let publicUrl = { url: process.env.PUBLIC_URL || null, at: 0 };
+app.get('/api/public-url', async (req, res) => {
+  const metrics = process.env.TUNNEL_METRICS;
+  if (!process.env.PUBLIC_URL && metrics && Date.now() - publicUrl.at > 15000) {
+    publicUrl.at = Date.now();
+    try {
+      const r = await fetch(`${metrics}/quicktunnel`, { signal: AbortSignal.timeout(2000) });
+      const j = await r.json();
+      publicUrl.url = j.hostname ? `https://${j.hostname}` : null;
+    } catch {
+      publicUrl.url = null;
+    }
+  }
+  res.json({ url: publicUrl.url });
+});
 app.get('/health', (req, res) => res.json({ ok: true, rooms: rooms.size }));
 
 const rooms = new Map(); // code -> Room
