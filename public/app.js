@@ -412,6 +412,7 @@
       const tags = [];
       if (p.id === S.hostId && S.phase === 'lobby') tags.push('<span class="tag host">房主</span>');
       if (p.id === S.you) tags.push('<span class="tag">你</span>');
+      if (p.bot) tags.push('<span class="tag">🤖 電腦</span>');
       if (!p.connected) tags.push('<span class="tag off">離線</span>');
       if (p.role && (p.id !== S.you || S.phase === 'ended')) tags.push(`<span class="tag ${ROLE[p.role].team === 'wolf' ? 'wolf' : 'good'}">${ROLE[p.role].name}</span>`);
       if (p.id in seerMap && S.phase !== 'ended') tags.push(`<span class="tag ${seerMap[p.id] ? 'wolf' : 'good'}">${seerMap[p.id] ? '查殺' : '金水'}</span>`);
@@ -445,7 +446,12 @@
       if (isHost()) {
         out.push(`<div class="btn-row">
           <button class="btn primary big" data-action="start" ${S.players.length < S.minPlayers ? 'disabled' : ''}>開始遊戲（${S.players.length} 人）</button></div>
-          <div class="btn-row"><button class="btn small" data-action="shuffle">隨機排座位</button></div>`);
+          <div class="btn-row">
+            <button class="btn small" data-action="addBots" data-count="1" ${S.players.length >= S.maxPlayers ? 'disabled' : ''}>🤖 ＋1 電腦玩家</button>
+            <button class="btn small" data-action="fillBots" ${S.players.length >= 6 ? 'disabled' : ''}>🤖 補到 6 人</button>
+            ${S.players.some((p) => p.bot) ? '<button class="btn small" data-action="removeBots">移除所有電腦</button>' : ''}
+            <button class="btn small" data-action="shuffle">隨機排座位</button></div>
+          <p class="setup-line">人不夠時可以加入電腦玩家測試，電腦會自動行動和投票。</p>`);
       }
     } else if (S.phase === 'ended') {
       if (isHost()) out.push(`<button class="btn primary big" data-action="lobby">再來一局</button>`);
@@ -612,6 +618,9 @@
       }
       case 'kick': emit('kick', { target: t.dataset.id }); break;
       case 'shuffle': emit('shuffleSeats'); break;
+      case 'addBots': emit('addBots', { count: Number(t.dataset.count) || 1 }); break;
+      case 'fillBots': emit('addBots', { count: 6 - S.players.length }); break;
+      case 'removeBots': emit('removeBots'); break;
       case 'start': emit('start'); break;
       case 'lobby': emit('lobby'); break;
       case 'skip': emit('act', { type: 'skip' }); break;

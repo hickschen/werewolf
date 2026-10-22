@@ -122,7 +122,7 @@ class Room {
     if (!p) return;
     this.players = this.players.filter((q) => q.id !== pid);
     this.reseat();
-    if (this.hostId === pid) this.hostId = (this.players.find((q) => q.connected) || this.players[0] || {}).id || null;
+    if (this.hostId === pid) this.hostId = (this.players.find((q) => q.connected && !q.bot) || this.players.find((q) => !q.bot) || {}).id || null;
     this.sys(`${p.name} 離開了房間`);
   }
 
@@ -133,7 +133,7 @@ class Room {
     if (!p) return;
     p.connected = on;
     if (!on && this.hostId === pid) {
-      const next = this.players.find((q) => q.connected);
+      const next = this.players.find((q) => q.connected && !q.bot);
       if (next) this.hostId = next.id;
     }
     if (on && !this.get(this.hostId)?.connected) this.hostId = pid;
@@ -207,7 +207,142 @@ class Room {
       this._resolve = resolve;
       this._timer = setTimeout(() => this.endStep(), ms);
       this.notify(this);
+      this.scheduleBots();
     });
+  }
+
+  // ---------- 電腦玩家 ----------
+  addBot() {
+    if (this.phase !== 'lobby') throw new Error('遊戲開始後不能加入電腦玩家');
+    let i = 1;
+    while (this.players.some((p) => p.name === `電腦${i}`)) i++;
+    const p = this.addPlayer(`電腦${i}`);
+    p.bot = true;
+    return p;
+  }
+
+  removeBots() {
+    if (this.phase !== 'lobby') throw new Error('遊戲開始後不能移除電腦玩家');
+    const n = this.players.filter((p) => p.bot).length;
+    this.players = this.players.filter((p) => !p.bot);
+    this.reseat();
+    if (n) this.sys(`移除了 ${n} 位電腦玩家`);
+  }
+
+  scheduleBots() {
+    const seq = (this.stepSeq = (this.stepSeq || 0) + 1);
+    for (const b of this.players.filter((p) => p.bot)) {
+      const delay = (1.2 + Math.random() * 3) * 1000 * SCALE;
+      setTimeout(() => {
+        if (this.stepSeq !== seq || this.phase === 'ended' || this.phase === 'lobby') return;
+        try {
+          if (this.botAct(b)) this.notify(this);
+        } catch (e) {
+          // 電腦玩家的操作不合法就略過
+        }
+      }, delay);
+    }
+  }
+
+  botSay(b, text) {
+    this.chat.push({ id: id(), ch: 'all', from: b.id, name: b.name, seat: b.seat, text, t: Date.now() });
+    if (this.chat.length > 300) this.chat.shift();
+  }
+
+  botLine(b, others) {
+    const pick = (a) => a[crypto.randomInt(a.length)];
+    if (b.role === 'seer' && this.seerResults.length) {
+      return '我是預言家。' + this.seerResults.map((r) => `${this.get(r.target).seat} 號是${r.wolf ? '狼人' : '好人'}`).join('，') + '。';
+    }
+    const x = others.length ? pick(others).seat : '';
+    return pick([
+      '我是好人，沒有特別的資訊，先過。',
+      `我覺得 ${x} 號剛剛的發言有點怪。`,
+      `我先聽聽看，${x} 號可以多注意一下。`,
+      '我是平民，跟著預言家走。',
+      `我懷疑 ${x} 號，這輪可以考慮投他。`,
+    ]);
+  }
+
+  // 回傳 true 表示做了動作
+  botAct(b) {
+    const pick = (a) => a[crypto.randomInt(a.length)];
+    const alive = this.alive();
+    const others = alive.filter((p) => p.id !== b.id);
+    const nonWolves = others.filter((p) => !isWolf(p.role));
+    if (!others.length) return false;
+
+    switch (this.step) {
+      case 'night_act':
+        if (!b.alive) return false;
+        if (isWolf(b.role)) {
+          const humanPick = Object.entries(this.wolfVotes).find(([w, t]) => t && !this.get(w).bot && this.get(t)?.alive)?.[1];
+          const anyPick = Object.values(this.wolfVotes).find((t) => t && this.get(t)?.alive);
+          this.act(b.id, { type: 'wolfVote', target: humanPick || anyPick || pick(nonWolves.length ? nonWolves : others).id });
+          return true;
+        }
+        if (b.role === 'seer' && !this.seerDoneTonight) {
+          const checked = new Set(this.seerResults.map((r) => r.target));
+          const c = others.filter((p) => !checked.has(p.id));
+          this.act(b.id, { type: 'seerCheck', target: pick(c.length ? c : others).id });
+          return true;
+        }
+        if (b.role === 'guard' && this.guardTarget === undefined) {
+          const c = alive.filter((p) => p.id !== this.guardLast);
+          this.act(b.id, { type: 'guard', target: c.length ? pick(c).id : null });
+          return true;
+        }
+        return false;
+
+      case 'night_witch':
+        if (!b.alive || b.role !== 'witch' || this.witchTonight) return false;
+        if (this.witchSave && this.wolfTarget && this.wolfTarget !== b.id && Math.random() < 0.7) this.act(b.id, { type: 'witch', save: true });
+        else if (this.witchPoison && this.nightNo > 1 && Math.random() < 0.25) this.act(b.id, { type: 'witch', poison: true, target: pick(others).id });
+        else this.act(b.id, { type: 'witch', skip: true });
+        return true;
+
+      case 'shoot': {
+        if (this.shooterId !== b.id) return false;
+        const c = b.role === 'wolfKing' && nonWolves.length ? nonWolves : others;
+        this.act(b.id, { type: 'shoot', target: Math.random() < 0.85 ? pick(c).id : null });
+        return true;
+      }
+
+      case 'discuss':
+      case 'lastwords':
+        if (this.speaker !== b.id) return false;
+        if (this.step === 'discuss' && b.alive) {
+          if (b.role === 'knight' && !this.knightUsed && Math.random() < 0.15) {
+            this.act(b.id, { type: 'duel', target: pick(others).id });
+            return true;
+          }
+          if (b.role === 'whiteWolfKing' && Math.random() < 0.1) {
+            this.act(b.id, { type: 'explode', target: pick(nonWolves.length ? nonWolves : others).id });
+            return true;
+          }
+        }
+        this.botSay(b, this.botLine(b, others));
+        this.act(b.id, { type: 'endSpeech' });
+        return true;
+
+      case 'vote': {
+        if (!b.alive || b.id in this.votes) return false;
+        let target;
+        const knownWolf = b.role === 'seer' && this.seerResults.find((r) => r.wolf && this.get(r.target).alive);
+        if (knownWolf) target = knownWolf.target;
+        else if (isWolf(b.role)) target = nonWolves.length ? pick(nonWolves).id : null;
+        else {
+          // 好人電腦會跟著電腦預言家公開的查殺投票
+          const seerBot = this.players.find((p) => p.bot && p.role === 'seer');
+          const claimed = seerBot && this.seerResults.find((r) => r.wolf && this.get(r.target).alive && r.target !== b.id);
+          if (claimed && Math.random() < 0.8) target = claimed.target;
+          else target = Math.random() < 0.05 ? null : pick(others).id;
+        }
+        this.act(b.id, { type: 'vote', target });
+        return true;
+      }
+    }
+    return false;
   }
 
   endStep() {
@@ -528,6 +663,8 @@ class Room {
         if (this.step !== 'night_act' || !p.alive || !isWolf(p.role)) throw new Error('你不能這樣做');
         if (target && !target.alive) throw new Error('目標已經死亡');
         this.wolfVotes[p.id] = target ? target.id : null;
+        // 真人狼人選了目標，電腦狼隊友跟著選同一人
+        if (!p.bot) for (const w of this.aliveWolves()) if (w.bot) this.wolfVotes[w.id] = this.wolfVotes[p.id];
         return this.checkNightDone();
 
       case 'seerCheck': {
@@ -645,7 +782,7 @@ class Room {
       let role = null;
       if (ended || q.id === me.id || (meWolf && isWolf(q.role))) role = q.role;
       else if (this.revealed[q.id]) role = this.revealed[q.id];
-      return { id: q.id, name: q.name, seat: q.seat, alive: q.alive, connected: q.connected, role };
+      return { id: q.id, name: q.name, seat: q.seat, alive: q.alive, connected: q.connected, bot: !!q.bot, role };
     });
 
     const s = {

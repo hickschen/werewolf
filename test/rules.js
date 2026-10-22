@@ -156,6 +156,15 @@ const until = async (room, step) => { for (let i = 0; i < 4000 && room.step !== 
     await until(r, 'vote');
     console.log('✓ 騎士決鬥好人失敗：騎士出局、白天繼續投票');
   }
+  // 8. 電腦狼隊友會跟隨真人狼人的目標
+  {
+    const r = await setupRoom(['werewolf', 'werewolf', 'seer', 'villager', 'villager', 'villager', 'witch']);
+    r.players[1].bot = true;
+    await until(r, 'night_act');
+    r.act(r.players[0].id, { type: 'wolfVote', target: r.players[4].id });
+    assert.strictEqual(r.wolfVotes[r.players[1].id], r.players[4].id);
+    console.log('✓ 電腦狼隊友跟隨真人的選擇');
+  }
   console.log('ALL RULE TESTS PASSED');
   process.exit(0);
 })().catch((e) => { console.error('FAIL', e.message); process.exit(1); });

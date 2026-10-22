@@ -42,7 +42,7 @@ app.get('/api/public-url', async (req, res) => {
 app.get('/api/busy', (req, res) => {
   const now = Date.now();
   const busy = [...rooms.values()].some((r) =>
-    r.players.some((p) => p.connected) && (!['lobby', 'ended'].includes(r.phase) || now - r.lastActive < 30 * 60 * 1000));
+    r.players.some((p) => p.connected && !p.bot) && (!['lobby', 'ended'].includes(r.phase) || now - (r.humanSeen || r.lastActive) < 30 * 60 * 1000));
   res.json({ busy });
 });
 app.get('/api/version', (req, res) => res.json({ version: process.env.GAME_VERSION || 'dev' }));
@@ -95,6 +95,7 @@ io.on('connection', (socket) => {
     const info = sockets.get(socket.id);
     const room = info && rooms.get(info.code);
     if (!room || !room.get(info.pid)) throw new Error('你不在房間裡');
+    room.humanSeen = Date.now();
     return { room, pid: info.pid };
   };
 
@@ -157,6 +158,21 @@ io.on('connection', (socket) => {
     broadcast(room);
   }));
 
+  socket.on('addBots', handle(({ count }) => {
+    const { room, pid } = ctx();
+    if (pid !== room.hostId) throw new Error('只有房主可以加入電腦玩家');
+    const n = Math.max(1, Math.min(19, Number(count) | 0 || 1));
+    for (let i = 0; i < n; i++) room.addBot();
+    broadcast(room);
+  }));
+
+  socket.on('removeBots', handle(() => {
+    const { room, pid } = ctx();
+    if (pid !== room.hostId) throw new Error('只有房主可以移除電腦玩家');
+    room.removeBots();
+    broadcast(room);
+  }));
+
   socket.on('shuffleSeats', handle(() => {
     const { room, pid } = ctx();
     if (pid !== room.hostId || room.phase !== 'lobby') throw new Error('只有房主可以在大廳調整座位');
@@ -198,8 +214,9 @@ io.on('connection', (socket) => {
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms) {
-    const anyone = room.players.some((p) => p.connected);
-    if ((!anyone && now - room.lastActive > 30 * 60 * 1000) || now - room.lastActive > 6 * 3600 * 1000) {
+    const anyone = room.players.some((p) => p.connected && !p.bot);
+    const seen = room.humanSeen || room.lastActive;
+    if ((!anyone && now - seen > 30 * 60 * 1000) || now - seen > 6 * 3600 * 1000) {
       room.gameId++;
       clearTimeout(room._timer);
       rooms.delete(code);
