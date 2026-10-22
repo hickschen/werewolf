@@ -118,6 +118,7 @@
   // ---------- 小工具 ----------
   function toast(msg) {
     const t = $('#toast');
+    t.classList.remove('info');
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toast._t);
@@ -231,6 +232,7 @@
     $('#soundBtn').textContent = sound ? '🔊' : '🔈';
     renderPhase();
     renderBanner();
+    renderSetupBar();
     renderMyRole();
     renderLobby();
     renderPlayers();
@@ -279,6 +281,24 @@
       h = ex ? `${label(ex)} 被放逐` : '沒有人出局'; p = '票數顯示在玩家卡片上';
     }
     $('#banner').innerHTML = h || p ? `<h2>${esc(h)}</h2>${p ? `<p>${esc(p)}</p>` : ''}` : '';
+  }
+
+  // 本局角色一覽（只顯示配置，不顯示存活狀況）
+  function renderSetupBar() {
+    const el = $('#setupBar');
+    const su = S.setup;
+    if (S.phase === 'lobby' || !su) { el.classList.add('hidden'); return; }
+    const plain = su.wolves - (su.wolfKing ? 1 : 0) - (su.whiteWolfKing ? 1 : 0);
+    const items = [];
+    if (su.wolfKing) items.push(['wolfKing', 1]);
+    if (su.whiteWolfKing) items.push(['whiteWolfKing', 1]);
+    if (plain > 0) items.push(['werewolf', plain]);
+    GOD_KEYS.forEach((k) => su[k] && items.push([k, 1]));
+    if (su.villagers > 0) items.push(['villager', su.villagers]);
+    el.classList.remove('hidden');
+    el.innerHTML = `<span class="sb-title">本局角色 <small>${S.players.length} 人</small></span>` + items.map(([k, n]) =>
+      `<button class="sb-chip ${ROLE[k].team}" data-action="roleInfo" data-role="${k}" title="${esc(ROLE[k].desc)}">
+        <span>${ROLE[k].icon}</span>${ROLE[k].name}${n > 1 ? `<b>×${n}</b>` : ''}</button>`).join('');
   }
 
   function renderMyRole() {
@@ -617,6 +637,11 @@
         if (!sel) { toast('請先點選要決鬥的玩家'); break; }
         if (confirm(`確定要翻牌決鬥 ${label(P(sel))} 嗎？整局只能用一次。`)) emit('act', { type: 'duel', target: sel });
         break;
+      case 'roleInfo': {
+        const r = ROLE[t.dataset.role];
+        if (r) showRoleInfo(r);
+        break;
+      }
       case 'rules': openRules(); break;
       case 'closeRules': $('#rulesPage').classList.add('hidden'); break;
       case 'endSpeech': emit('act', { type: 'endSpeech' }); break;
@@ -627,6 +652,15 @@
 
   let gameVersion = '';
   fetch('/api/version').then((r) => r.json()).then((j) => (gameVersion = j.version)).catch(() => {});
+  function showRoleInfo(r) {
+    const t = $('#toast');
+    t.classList.add('info');
+    t.innerHTML = `<b>${r.icon} ${esc(r.name)}</b>（${r.team === 'wolf' ? '狼人陣營' : '好人陣營'}）<br>${esc(r.desc)}`;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove('show'), 5000);
+  }
+
   function openRules() {
     $('#rulesBody').innerHTML = rulesHtml(S?.setupText) + (gameVersion ? `<p class="setup-line" style="text-align:center;margin-top:24px">版本 ${esc(gameVersion)}</p>` : '');
     $('#rulesPage').classList.remove('hidden');

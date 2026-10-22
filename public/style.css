@@ -240,3 +240,16 @@ select { background: var(--card-solid); border: 1px solid var(--line); border-ra
   .top-actions { gap: 4px; }
   .icon-btn { min-width: 32px; height: 32px; padding: 0 8px; font-size: 14px; }
 }
+
+/* 本局角色一覽 */
+.setup-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; padding: 10px 12px;
+  border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); }
+.sb-title { font-size: 13px; color: var(--muted); margin-right: 4px; white-space: nowrap; }
+.sb-title small { font-size: 11px; }
+.sb-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px 3px 7px; border-radius: 99px; font-size: 13px;
+  border: 1px solid var(--line); background: var(--card); cursor: pointer; line-height: 1.5; }
+.sb-chip.wolf { border-color: color-mix(in srgb, var(--wolf) 55%, transparent); }
+.sb-chip.good { border-color: color-mix(in srgb, var(--good) 45%, transparent); }
+.sb-chip b { font-weight: 700; margin-left: 1px; }
+.sb-chip:active { transform: scale(0.96); }
+.toast.info { width: min(420px, calc(100% - 32px)); text-align: left; line-height: 1.6; }
