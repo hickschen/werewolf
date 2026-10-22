@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>狼人殺後台</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠️</text></svg>" />
+  <style>
+    :root {
+      --bg: #14122a; --card: #1f1c3d; --line: rgba(255,255,255,.12); --text: #ece8ff; --muted: #a39dc8;
+      --accent: #f2c76e; --ok: #5fd3a1; --warn: #f2c76e; --bad: #ff5d6c;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif; font-size: 15px; line-height: 1.5; }
+    main { max-width: 920px; margin: 0 auto; padding: 20px 16px 48px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { font-size: 16px; margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .kv small { display: block; color: var(--muted); font-size: 12px; }
+    .kv b { font-size: 17px; font-variant-numeric: tabular-nums; }
+    .kv .msg { color: var(--muted); font-size: 13px; }
+    .pill { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 13px; font-weight: 700; }
+    .pill.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+    .pill.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+    .pill.bad { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+    .btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    button { font: inherit; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 10px; padding: 9px 16px; cursor: pointer; font-weight: 500; }
+    button.primary { background: var(--accent); color: #2a1f05; border-color: transparent; font-weight: 700; }
+    button.danger { background: var(--bad); color: #fff; border-color: transparent; font-weight: 700; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
+    .room { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+    .room-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; margin-bottom: 8px; }
+    .room-head .code { font-size: 20px; font-weight: 900; letter-spacing: 3px; }
+    .room-head .meta { color: var(--muted); font-size: 13px; }
+    .people { display: flex; flex-wrap: wrap; gap: 6px; }
+    .person { font-size: 13px; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--line); }
+    .person.on { border-color: color-mix(in srgb, var(--ok) 60%, transparent); }
+    .person.off { color: var(--muted); }
+    .person.dead { text-decoration: line-through; opacity: .6; }
+    .empty { color: var(--muted); text-align: center; padding: 16px 0; }
+    .banner { background: color-mix(in srgb, var(--warn) 18%, transparent); border: 1px solid var(--warn); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
+    .hidden { display: none; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>🛠️ 狼人殺後台</h1>
+  <p class="sub">只有家裡的內部網路能打開這個頁面。每 5 秒自動更新。 <a href="/">回到遊戲</a></p>
+
+  <div id="updatingBanner" class="banner hidden">⏳ 正在更新並重新啟動，大約 1 分鐘，完成後這個頁面會自動重新整理…</div>
+
+  <section class="card">
+    <h2>版本與更新</h2>
+    <div class="grid">
+      <div class="kv"><small>目前執行的版本</small><b id="current">—</b></div>
+      <div class="kv"><small>GitHub 最新版本</small><b id="latest">—</b><div class="msg" id="latestMsg"></div></div>
+      <div class="kv"><small>更新狀態</small><span id="state" class="pill">—</span></div>
+      <div class="kv"><small>上次檢查</small><b id="lastCheck">—</b><div class="msg" id="interval"></div></div>
+    </div>
+    <div class="note" id="error"></div>
+    <div class="btns">
+      <button class="primary" id="checkBtn">🔄 立即檢查更新</button>
+      <button class="danger" id="forceBtn">⚡ 強制更新</button>
+    </div>
+    <p class="note">「立即檢查更新」：有新版本時，如果沒有對局正在進行就馬上更新。<br>
+      「強制更新」：不管有沒有人在玩都立刻更新，<b>進行中的對局會中斷</b>，所有房間都會消失。</p>
+  </section>
+
+  <section class="card">
+    <h2>房間（<span id="roomCount">0</span>）</h2>
+    <div id="rooms"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const STEP = { reveal: '查看身分', night_act: '夜晚行動', night_witch: '女巫行動', announce: '公布', shoot: '開槍', lastwords: '遺言', discuss: '發言', vote: '投票', vote_result: '投票結果' };
+  let data = null;
+  let waitingFor = null; // 等待版本改變
+  let lastPostAt = 0;
+
+  const ago = (t, now) => {
+    const s = Math.max(0, Math.round((now - t) / 1000));
+    if (s < 60) return `${s} 秒前`;
+    if (s < 3600) return `${Math.floor(s / 60)} 分鐘前`;
+    return `${Math.floor(s / 3600)} 小時前`;
+  };
+  const phaseText = (r) => {
+    if (r.phase === 'lobby') return '大廳';
+    if (r.phase === 'ended') return '已結束';
+    if (r.step === 'reveal') return '查看身分';
+    if (r.phase === 'night') return `第 ${r.nightNo} 夜 · ${STEP[r.step] || ''}`;
+    return `第 ${r.nightNo} 天 · ${STEP[r.step] || ''}`;
+  };
+
+  async function load() {
+    try {
+      const r = await fetch('/admin/api/status', { cache: 'no-store' });
+      if (r.status === 403) { document.body.innerHTML = '<main><h1>🔒 只能從內部網路開啟</h1><p class="sub">請在家裡的 Wi-Fi 下，用 http://NAS的IP:3000/admin 打開。</p></main>'; return; }
+      data = await r.json();
+      if (waitingFor && data.version !== waitingFor) { location.reload(); return; }
+      render();
+    } catch {
+      // 伺服器正在重新啟動
+      if (data && Date.now() - lastPostAt < 180000) waitingFor = waitingFor || data.version;
+      if (waitingFor) $('#updatingBanner').classList.remove('hidden');
+    }
+  }
+
+  function render() {
+    const u = data.updater || {};
+    if (u.updating) waitingFor = waitingFor || data.version;
+    $('#current').textContent = data.version;
+    $('#latest').textContent = u.latest || (u.managed ? '尚未檢查' : '—');
+    $('#latestMsg').textContent = u.latestMessage || '';
+    $('#lastCheck').textContent = u.lastCheck ? ago(u.lastCheck, data.now) : '—';
+    $('#interval').textContent = u.managed ? `每 ${u.interval} 秒自動檢查一次` : '';
+    $('#error').textContent = u.lastError ? `⚠️ 上次檢查失敗：${u.lastError}` : '';
+    const st = $('#state');
+    if (!u.managed) { st.className = 'pill bad'; st.textContent = '非自動更新模式'; }
+    else if (u.updating) { st.className = 'pill warn'; st.textContent = '更新中…'; }
+    else if (u.latest && u.latest !== u.current) { st.className = 'pill warn'; st.textContent = data.busy ? '有新版，等對局結束' : '有新版，即將更新'; }
+    else if (u.latest) { st.className = 'pill ok'; st.textContent = '已是最新'; }
+    else { st.className = 'pill'; st.textContent = '等待第一次檢查'; }
+    $('#checkBtn').disabled = !u.managed || u.updating;
+    $('#forceBtn').disabled = !u.managed || u.updating;
+    $('#updatingBanner').classList.toggle('hidden', !u.updating && !waitingFor);
+
+    $('#roomCount').textContent = data.rooms.length;
+    $('#rooms').innerHTML = data.rooms.length ? data.rooms.map((r) => {
+      const humans = r.players.filter((p) => !p.bot);
+      const online = humans.filter((p) => p.connected).length;
+      const bots = r.players.length - humans.length;
+      const active = !['lobby', 'ended'].includes(r.phase) && online > 0;
+      return `<div class="room">
+        <div class="room-head"><span class="code">${esc(r.code)}</span>
+          <span class="pill ${active ? 'warn' : 'ok'}">${esc(phaseText(r))}</span>
+          <span class="meta">真人 ${online}/${humans.length} 在線${bots ? ` · 電腦 ${bots}` : ''} · 最後活動 ${ago(r.lastActive, data.now)}</span></div>
+        <div class="people">${r.players.map((p) => `<span class="person ${p.bot ? '' : p.connected ? 'on' : 'off'} ${p.alive || r.phase === 'lobby' ? '' : 'dead'}">
+          ${p.seat}. ${p.bot ? '🤖' : p.connected ? '🟢' : '⚪'} ${esc(p.name)}${p.host ? ' 👑' : ''}</span>`).join('')}</div>
+      </div>`;
+    }).join('') : '<div class="empty">目前沒有任何房間</div>';
+  }
+
+  async function post(force) {
+    const r = await fetch('/admin/api/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ force }) });
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) { alert(j.error || '操作失敗'); return; }
+    lastPostAt = Date.now();
+    for (let i = 1; i <= 6; i++) setTimeout(load, i * 800);
+  }
+
+  $('#checkBtn').addEventListener('click', () => post(false));
+  $('#forceBtn').addEventListener('click', () => {
+    const n = data.rooms.filter((r) => !['lobby', 'ended'].includes(r.phase)).length;
+    const msg = n ? `目前有 ${n} 個房間正在遊戲中，強制更新會中斷對局、清空所有房間。確定要強制更新嗎？` : '確定要立即強制更新嗎？所有房間都會清空。';
+    if (confirm(msg)) post(true);
+  });
+
+  load();
+  setInterval(load, 5000);
+})();
+</script>
+</body>
+</html>

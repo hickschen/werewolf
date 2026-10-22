@@ -34,6 +34,8 @@ NAS 會直接從 GitHub 下載遊戲，並且**每 3 分鐘自動檢查新版本
 
 - 如果大廳沒有顯示外網網址：到 Container Station →「容器」→ `werewolf-tunnel` →「日誌」，找 `https://….trycloudflare.com` 那一行。
 - 外網網址只有在 `werewolf-tunnel` 容器重啟（例如 NAS 重開機）時才會改變；遊戲自動更新不會改變網址。
+- **後台**：在家裡的 Wi-Fi 下打開 `http://NAS的IP:3000/admin`，可以看到目前版本、GitHub 最新版本、所有房間和誰在線上，也能按「立即檢查更新」或「強制更新」。後台只能從內部網路開啟，朋友從外網網址打不開。
+- 只有「真人正在進行中的對局」會讓更新等待；大廳和已結束的房間不會擋住更新（更新後房間會清空，重新建立即可）。
 - 想看更新紀錄：Container Station →「容器」→ `werewolf` →「日誌」，會看到「[更新]」開頭的訊息。目前版本也會顯示在規則頁最下方。
 - 如果 3000 埠已被別的程式使用，把 `docker-compose.yml` 裡的 `"3000:3000"` 改成例如 `"3300:3000"`，改用 `http://NAS的IP:3300`。
 
@@ -64,6 +66,7 @@ NAS 會直接從 GitHub 下載遊戲，並且**每 3 分鐘自動檢查新版本
 | `game.js` | 遊戲規則與流程（法官） |
 | `server.js` | 連線伺服器（Express + Socket.IO） |
 | `online.js` | 啟動伺服器並建立 Cloudflare 外網通道 |
+| `admin/index.html` | 後台頁面（只限內部網路） |
 | `supervisor.js` | NAS 用的自動更新管理員（定期檢查 GitHub、在沒人遊戲時更新） |
 | `docker-compose.yml` | NAS／Docker 用的設定（遊戲 + 自動更新 + Cloudflare 通道） |
 | `public/` | 網頁畫面（`index.html`、`style.css`、`app.js`） |

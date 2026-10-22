@@ -1,5 +1,6 @@
 // 自動更新管理員：啟動遊戲伺服器，並定期到 GitHub 檢查新版本
-// 有新版本、而且沒有人正在遊戲中時，下載新版並結束程式，讓 Docker 自動重啟成新版本。
+// 有新版本、而且沒有正在進行的對局時，下載新版並結束程式，讓 Docker 自動重啟成新版本。
+// 後台（/admin）可以透過 IPC 要求「立即檢查」或「強制更新」。
 'use strict';
 const { spawn, execFileSync } = require('child_process');
 const path = require('path');
@@ -15,20 +16,38 @@ const git = (...args) => execFileSync('git', args, { cwd: DIR, encoding: 'utf8',
 let commit = 'unknown';
 try { commit = git('rev-parse', '--short', 'HEAD'); } catch {}
 
-// 啟動遊戲伺服器（子程序）
+const status = {
+  managed: true,
+  current: commit,
+  latest: null,
+  latestMessage: null,
+  lastCheck: null,
+  pending: false,
+  lastError: null,
+  interval: INTERVAL / 1000,
+  updating: false,
+};
+
 let child;
 let stopping = false;
+const sendStatus = () => { try { child?.connected && child.send({ type: 'status', status }); } catch {} };
+
 function startServer() {
   child = spawn(process.execPath, [path.join(DIR, 'server.js')], {
     cwd: DIR,
-    stdio: 'inherit',
+    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
     env: { ...process.env, GAME_VERSION: commit },
+  });
+  child.on('message', (m) => {
+    if (m?.type === 'check') check(!!m.force, m.by);
+    if (m?.type === 'getStatus') sendStatus();
   });
   child.on('exit', (code) => {
     if (stopping) return;
     log(`遊戲伺服器意外結束（${code}），3 秒後重新啟動`);
     setTimeout(startServer, 3000);
   });
+  setTimeout(sendStatus, 1000);
 }
 
 async function isBusy() {
@@ -40,26 +59,44 @@ async function isBusy() {
   }
 }
 
-let pending = null; // 已發現但還沒套用的新版本
-async function check() {
+let checking = false;
+async function check(force = false, by = '') {
+  if (checking || status.updating) return;
+  checking = true;
   try {
     git('fetch', '--depth', '1', 'origin', BRANCH);
     const local = git('rev-parse', 'HEAD');
     const remote = git('rev-parse', 'FETCH_HEAD');
-    if (local === remote) return;
-    const short = remote.slice(0, 7);
-    if (await isBusy()) {
-      if (pending !== short) log(`發現新版本 ${short}，但有人正在遊戲中，等遊戲結束後再更新`);
-      pending = short;
+    status.latest = remote.slice(0, 7);
+    try { status.latestMessage = git('log', '-1', '--format=%s', 'FETCH_HEAD'); } catch {}
+    status.lastCheck = Date.now();
+    status.lastError = null;
+    if (local === remote) {
+      status.pending = false;
+      if (by) log(`${by}：已經是最新版本 ${status.current}`);
       return;
     }
-    log(`更新到新版本 ${short}…`);
+    if (!force && (await isBusy())) {
+      if (!status.pending) log(`發現新版本 ${status.latest}，但有對局正在進行，等遊戲結束後再更新`);
+      status.pending = true;
+      return;
+    }
+    log(`${force ? `強制更新（${by || '後台'}）` : '更新'}到新版本 ${status.latest}…`);
+    status.updating = true;
+    sendStatus();
     git('reset', '--hard', remote);
     stopping = true;
-    child.kill('SIGTERM');
-    setTimeout(() => process.exit(0), 1500); // 結束後 Docker 會自動重啟，重新安裝套件並載入新版
+    setTimeout(() => {
+      child.kill('SIGTERM');
+      setTimeout(() => process.exit(0), 1500); // 結束後 Docker 會自動重啟，重新安裝套件並載入新版
+    }, 1500);
   } catch (e) {
-    log('檢查更新失敗：', (e.stderr || e.message || '').toString().split('\n')[0]);
+    status.lastError = (e.stderr || e.message || '').toString().split('\n')[0];
+    status.lastCheck = Date.now();
+    log('檢查更新失敗：', status.lastError);
+  } finally {
+    checking = false;
+    sendStatus();
   }
 }
 
@@ -69,5 +106,5 @@ process.on('SIGINT', shutdown);
 
 log(`目前版本 ${commit}，每 ${INTERVAL / 1000} 秒檢查一次 GitHub`);
 startServer();
-setInterval(check, INTERVAL);
-setTimeout(check, 15000);
+setInterval(() => check(), INTERVAL);
+setTimeout(() => check(), 15000);

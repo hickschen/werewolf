@@ -38,13 +38,58 @@ app.get('/api/public-url', async (req, res) => {
   }
   res.json({ url: publicUrl.url });
 });
-// 給自動更新用：有人正在遊戲中（或最近 30 分鐘內有動靜的房間）就算忙碌
-app.get('/api/busy', (req, res) => {
+// 給自動更新用：有真人參與、而且正在進行中的對局才算忙碌（大廳和已結束的房間不會擋住更新）
+function activeGames() {
+  return [...rooms.values()].filter((r) => !['lobby', 'ended'].includes(r.phase) && r.players.some((p) => p.connected && !p.bot));
+}
+app.get('/api/busy', (req, res) => res.json({ busy: activeGames().length > 0 }));
+
+// ---------- 後台（只允許內部網路） ----------
+function isLocal(req) {
+  const h = req.headers;
+  // 從 Cloudflare 通道進來的連線會帶這些標頭，一律視為外網
+  if (h['cf-connecting-ip'] || h['cf-ray'] || h['x-forwarded-for'] || /trycloudflare\.com$/i.test((h.host || '').split(':')[0])) return false;
+  const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  return ip === '127.0.0.1' || ip === '::1' || /^10\./.test(ip) || /^192\.168\./.test(ip) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(ip) || /^(fc|fd|fe80)/i.test(ip);
+}
+function localOnly(req, res, next) {
+  if (isLocal(req)) return next();
+  res.status(403).type('text/plain; charset=utf-8').send('後台只能從家裡的內部網路開啟');
+}
+
+let updater = { managed: false };
+process.on('message', (m) => { if (m?.type === 'status') updater = m.status; });
+const askUpdater = (msg) => { if (process.send) process.send(msg); };
+askUpdater({ type: 'getStatus' });
+
+app.get('/admin', localOnly, (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
+app.get('/admin/api/status', localOnly, (req, res) => {
   const now = Date.now();
-  const busy = [...rooms.values()].some((r) =>
-    r.players.some((p) => p.connected && !p.bot) && (!['lobby', 'ended'].includes(r.phase) || now - (r.humanSeen || r.lastActive) < 30 * 60 * 1000));
-  res.json({ busy });
+  res.json({
+    version: process.env.GAME_VERSION || 'dev',
+    startedAt,
+    now,
+    updater,
+    busy: activeGames().length > 0,
+    rooms: [...rooms.values()].map((r) => ({
+      code: r.code,
+      phase: r.phase,
+      step: r.step,
+      nightNo: r.nightNo,
+      lastActive: r.humanSeen || r.lastActive,
+      players: r.players.map((p) => ({ name: p.name, seat: p.seat, bot: !!p.bot, connected: p.connected, alive: p.alive, host: p.id === r.hostId })),
+    })),
+  });
 });
+app.post('/admin/api/check', localOnly, express.json(), (req, res) => {
+  if (!updater.managed) return res.status(400).json({ ok: false, error: '目前不是自動更新模式（只有 NAS 上用 docker-compose 啟動時才能更新）' });
+  const force = !!req.body?.force;
+  askUpdater({ type: 'check', force, by: force ? '後台強制更新' : '後台手動檢查' });
+  res.json({ ok: true });
+});
+const startedAt = Date.now();
+
 app.get('/api/version', (req, res) => res.json({ version: process.env.GAME_VERSION || 'dev' }));
 app.get('/health', (req, res) => res.json({ ok: true, rooms: rooms.size }));
 
