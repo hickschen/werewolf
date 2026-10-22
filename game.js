@@ -22,22 +22,21 @@ const SHOOTERS = ['hunter', 'wolfKing']; // 死亡時可以開槍（被毒死除
 const isWolf = (role) => ROLES[role]?.team === 'wolf';
 
 const MIN_PLAYERS = 4;
-const MAX_PLAYERS = 12;
+const MAX_PLAYERS = 20;
 
+// 依人數自動配置（4–20 人）
 function defaultSetup(n) {
-  const s = {
-    wolves: n <= 5 ? 1 : n <= 7 ? 2 : n <= 10 ? 3 : 4,
-    wolfKing: false,
-    whiteWolfKing: false,
+  const wolves = n <= 5 ? 1 : n <= 7 ? 2 : n <= 10 ? 3 : n <= 14 ? 4 : n <= 17 ? 5 : 6;
+  return {
+    wolves,
+    wolfKing: n === 9 || n === 11 || n >= 14,
+    whiteWolfKing: n === 10 || n >= 12,
     seer: true,
     witch: true,
     hunter: n >= 7,
     guard: n >= 10,
-    gravekeeper: false,
+    gravekeeper: n >= 13,
   };
-  if (n === 9 || n === 11) s.wolfKing = true;
-  if (n === 10 || n === 12) s.whiteWolfKing = true;
-  return s;
 }
 
 const id = () => crypto.randomBytes(6).toString('hex');
@@ -154,7 +153,7 @@ class Room {
       s.autoSetup = !!patch.autoSetup;
       if (!s.autoSetup) Object.assign(s, defaultSetup(this.players.length));
     }
-    if ('wolves' in patch) s.wolves = Math.max(1, Math.min(5, Number(patch.wolves) | 0));
+    if ('wolves' in patch) s.wolves = Math.max(1, Math.min(9, Number(patch.wolves) | 0));
     for (const k of [...SPECIAL_WOLVES, ...GODS]) if (k in patch) s[k] = !!patch[k];
     // 特殊狼人也算在狼人總數裡
     const specials = SPECIAL_WOLVES.filter((k) => s[k]).length;

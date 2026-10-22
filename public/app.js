@@ -18,6 +18,26 @@
   const isWolfRole = (r) => ROLE[r]?.team === 'wolf';
   const ROLE_ORDER = ['werewolf', 'wolfKing', 'whiteWolfKing', 'villager', 'seer', 'witch', 'hunter', 'guard', 'gravekeeper'];
 
+  // 與伺服器相同的自動配置規則（只用來顯示規則頁的表格）
+  function autoSetup(n) {
+    const wolves = n <= 5 ? 1 : n <= 7 ? 2 : n <= 10 ? 3 : n <= 14 ? 4 : n <= 17 ? 5 : 6;
+    const s = { wolfKing: n === 9 || n === 11 || n >= 14, whiteWolfKing: n === 10 || n >= 12, seer: true, witch: true,
+      hunter: n >= 7, guard: n >= 10, gravekeeper: n >= 13 };
+    const plain = wolves - (s.wolfKing ? 1 : 0) - (s.whiteWolfKing ? 1 : 0);
+    const gods = ['seer', 'witch', 'hunter', 'guard', 'gravekeeper'].filter((k) => s[k]);
+    const villagers = n - wolves - gods.length;
+    return [s.wolfKing && '狼王', s.whiteWolfKing && '白狼王', plain > 0 && `狼人 ×${plain}`,
+      ...gods.map((k) => ROLE[k].name), villagers > 0 && `村民 ×${villagers}`].filter(Boolean).join('、');
+  }
+  function autoTable() {
+    const rows = [];
+    for (let n = 4; n <= 20; n++) {
+      const t = autoSetup(n);
+      rows.push({ n, t });
+    }
+    return rows.map((r) => `<tr><td>${r.n}</td><td>${esc(r.t)}</td></tr>`).join('');
+  }
+
   function rulesHtml(setupText) {
     const roleCard = (k) => {
       const r = ROLE[k];
@@ -56,14 +76,7 @@
       </ul>
       <h3>依人數自動配置</h3>
       <table class="rule-table"><tr><th>人數</th><th>配置</th></tr>
-        <tr><td>4–5</td><td>狼人 ×1、預言家、女巫、村民</td></tr>
-        <tr><td>6</td><td>狼人 ×2、預言家、女巫、村民 ×2</td></tr>
-        <tr><td>7</td><td>狼人 ×2、預言家、女巫、獵人、村民 ×2</td></tr>
-        <tr><td>8</td><td>狼人 ×3、預言家、女巫、獵人、村民 ×2</td></tr>
-        <tr><td>9</td><td>狼王、狼人 ×2、預言家、女巫、獵人、村民 ×3</td></tr>
-        <tr><td>10</td><td>白狼王、狼人 ×2、預言家、女巫、獵人、守衛、村民 ×3</td></tr>
-        <tr><td>11</td><td>狼王、狼人 ×3、預言家、女巫、獵人、守衛、村民 ×3</td></tr>
-        <tr><td>12</td><td>白狼王、狼人 ×3、預言家、女巫、獵人、守衛、村民 ×4</td></tr>
+        ${autoTable()}
       </table>
       <p class="setup-line">房主可以關掉「依人數自動配置」，自己選擇角色。</p>
       <h3>小提醒</h3>
