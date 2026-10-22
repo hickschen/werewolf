@@ -363,6 +363,7 @@
           <button data-action="setting" data-key="wolves" data-val="${s.wolves + 1}">＋</button></div></div>
         ${['wolfKing', 'whiteWolfKing', ...GOD_KEYS].map((k) =>
           `<div class="setrow"><span>${ROLE[k].icon} ${ROLE[k].name}</span>${sw(k, s[k])}</div>`).join('')}`}
+        <div class="setrow"><span>白天自由聊天<small>（關閉時只有輪到的人能打字）</small></span>${sw('freeChat', !!s.freeChat)}</div>
         <div class="setrow"><span>每人發言時間</span>
           <select data-action="speakTime">${[30, 60, 90, 120, 180].map((v) => `<option value="${v}" ${v === s.speakTime ? 'selected' : ''}>${v} 秒</option>`).join('')}</select></div>
         <div class="setrow"><span class="setup-line">${esc(setupLine)}</span></div>
@@ -547,7 +548,7 @@
     const tag = { all: '全體', wolf: '狼隊頻道', dead: '亡者頻道' }[ch] || '';
     $('#chatCh').textContent = tag;
     input.disabled = !ch;
-    input.placeholder = ch ? '輸入訊息…' : '天黑了，請保持安靜';
+    input.placeholder = ch ? (ch === 'all' && S.speaker === S.you ? '輪到你發言，輸入訊息…' : '輸入訊息…') : (S.chatBlocked || '現在不能發言');
 
     const last = S.chat.length ? S.chat[S.chat.length - 1].id : null;
     if (activeTab === 'chat') seenChat = last;

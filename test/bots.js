@@ -51,7 +51,7 @@ async function act(b) {
   const me = st.players.find((p) => p.id === st.you);
   const others = st.players.filter((p) => p.alive && p.id !== st.you);
   const alive = st.players.filter((p) => p.alive);
-  if (Math.random() < 0.3 && st.chatChannel) b.emit('chat', { text: 'hi from ' + b.name });
+  if (Math.random() < 0.3 && st.chatChannel) b.s.emit('chat', { text: 'hi from ' + b.name }, () => {});
   if (st.step === 'shoot' && st.shootTurn) { stats.shoot++; b.emit('act', { type: 'shoot', target: Math.random() < 0.8 ? pick(others).id : null }); }
   if (!me.alive) return;
   if (st.step === 'night_act' && isW(me.role)) {

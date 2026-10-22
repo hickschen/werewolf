@@ -165,6 +165,38 @@ const until = async (room, step) => { for (let i = 0; i < 4000 && room.step !== 
     assert.strictEqual(r.wolfVotes[r.players[1].id], r.players[4].id);
     console.log('✓ 電腦狼隊友跟隨真人的選擇');
   }
+  // 9. 輪流發言時只有發言者能公開聊天；遺言的死者可以說話；投票時安靜；自由聊天開關
+  {
+    const r = await setupRoom(['werewolf', 'werewolf', 'seer', 'villager', 'villager', 'villager', 'witch', 'villager']);
+    await until(r, 'night_act');
+    const v = r.players[3];
+    r.players.filter((p) => p.role === 'werewolf').forEach((w) => r.act(w.id, { type: 'wolfVote', target: v.id }));
+    r.act(r.players[0].id, { type: 'wolfVote', target: v.id });
+    assert.doesNotThrow(() => r.say(r.players[0].id, '狼隊晚上可以聊'));
+    assert.throws(() => r.say(r.players[3].id, '好人晚上不能聊'), /天黑/);
+    r.act(P(r, 'seer').id, { type: 'seerCheck', target: r.players[0].id });
+    await until(r, 'night_witch');
+    r.act(P(r, 'witch').id, { type: 'witch', skip: true });
+    await until(r, 'lastwords');
+    assert.strictEqual(r.speaker, v.id);
+    assert.ok(!v.alive);
+    r.say(v.id, '這是我的遺言');
+    assert.strictEqual(r.chat[r.chat.length - 1].ch, 'all');
+    const other = r.players.find((p) => p.alive && p.id !== r.speaker);
+    assert.throws(() => r.say(other.id, '插嘴'), /輪到/);
+    r.act(v.id, { type: 'endSpeech' });
+    await until(r, 'discuss');
+    const sp = r.get(r.speaker), notSp = r.alive().find((p) => p.id !== r.speaker);
+    assert.doesNotThrow(() => r.say(sp.id, '我是好人'));
+    assert.throws(() => r.say(notSp.id, '插嘴'), /輪到/);
+    r.settings.freeChat = true;
+    assert.doesNotThrow(() => r.say(notSp.id, '開了自由聊天就可以'));
+    r.settings.freeChat = false;
+    while (r.step === 'discuss') { r.act(r.speaker, { type: 'endSpeech' }); await sleep(2); }
+    await until(r, 'vote');
+    assert.throws(() => r.say(notSp.id, '投票時說話'), /投票中/);
+    console.log('✓ 輪流發言時只有發言者能說話、遺言可說、投票時安靜、自由聊天開關有效');
+  }
   console.log('ALL RULE TESTS PASSED');
   process.exit(0);
 })().catch((e) => { console.error('FAIL', e.message); process.exit(1); });

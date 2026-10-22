@@ -161,6 +161,7 @@ class Room {
     // 特殊狼人也算在狼人總數裡
     const specials = SPECIAL_WOLVES.filter((k) => s[k]).length;
     if (specials > s.wolves) s.wolves = specials;
+    if ('freeChat' in patch) s.freeChat = !!patch.freeChat;
     if ('speakTime' in patch) s.speakTime = Math.max(20, Math.min(300, Number(patch.speakTime) | 0));
   }
 
@@ -175,16 +176,26 @@ class Room {
     text = String(text || '').trim().slice(0, 200);
     if (!p || !text) return;
     const ch = this.chatChannel(p);
-    if (!ch) throw new Error(this.phase === 'night' ? '天黑了，請保持安靜' : '現在不能發言');
+    if (!ch) throw new Error(this.chatBlockedReason());
     this.chat.push({ id: id(), ch, from: p.id, name: p.name, seat: p.seat, text, t: Date.now() });
     if (this.chat.length > 300) this.chat.shift();
   }
 
   chatChannel(p) {
     if (this.phase === 'lobby' || this.phase === 'ended') return 'all';
+    // 輪流發言／遺言：只有正在發言的人能在公開頻道說話（留遺言的死者也可以）
+    if (this.phase === 'day' && ['discuss', 'lastwords'].includes(this.step) && this.speaker === p.id) return 'all';
     if (!p.alive) return 'dead';
     if (this.phase === 'night') return isWolf(p.role) ? 'wolf' : null;
-    return 'all';
+    return this.settings.freeChat ? 'all' : null;
+  }
+
+  chatBlockedReason() {
+    if (this.phase === 'night') return '天黑了，請保持安靜';
+    const sp = this.get(this.speaker);
+    if (sp && ['discuss', 'lastwords'].includes(this.step)) return `現在輪到 ${this.label(sp)} 發言，請稍候`;
+    if (this.step === 'vote') return '投票中，請安靜投票';
+    return '現在不能發言';
   }
 
   canSee(p, msg) {
@@ -805,6 +816,7 @@ class Room {
       log: this.log.slice(-60),
       chat: this.chat.filter((m) => this.canSee(me, m)).slice(-100),
       chatChannel: this.chatChannel(me),
+      chatBlocked: this.chatChannel(me) ? null : this.chatBlockedReason(),
       winner: this.winner,
       lastVote: this.lastVote,
       minPlayers: MIN_PLAYERS,
