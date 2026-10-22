@@ -30,10 +30,7 @@
         <input id="codeInput" inputmode="numeric" maxlength="4" placeholder="4 位數房號" />
         <button class="btn" data-action="join">加入</button>
       </div>
-      <details class="rules">
-        <summary>遊戲規則</summary>
-        <div id="rulesBody"></div>
-      </details>
+      <button class="btn link-btn" data-action="rules">📖 遊戲規則與角色介紹</button>
     </div>
   </section>
 
@@ -44,6 +41,7 @@
       <div class="phase" id="phaseLabel"></div>
       <div class="timer" id="timer"></div>
       <div class="top-actions">
+        <button class="icon-btn" data-action="rules" title="遊戲規則" aria-label="遊戲規則">📖</button>
         <button class="icon-btn" id="soundBtn" data-action="sound" title="旁白語音">🔈</button>
         <button class="icon-btn" data-action="leave" title="離開房間">離開</button>
       </div>
@@ -75,6 +73,18 @@
           <div id="logList" class="log-list"></div>
         </div>
       </aside>
+    </div>
+  </section>
+
+  <!-- 規則頁 -->
+  <section id="rulesPage" class="rules-page hidden" role="dialog" aria-label="遊戲規則">
+    <div class="rules-inner">
+      <div class="rules-head">
+        <h2>📖 遊戲規則</h2>
+        <button class="btn small" data-action="closeRules">關閉</button>
+      </div>
+      <div id="rulesBody"></div>
+      <button class="btn big" data-action="closeRules">回到遊戲</button>
     </div>
   </section>
 

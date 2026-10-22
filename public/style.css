@@ -69,9 +69,6 @@ input:focus { border-color: var(--accent); }
 .or { text-align: center; color: var(--muted); font-size: 13px; margin: 18px 0 10px; position: relative; }
 .join-row { display: flex; gap: 8px; }
 .join-row input { letter-spacing: 6px; text-align: center; font-size: 18px; }
-.rules { margin-top: 20px; color: var(--muted); font-size: 14px; }
-.rules summary { cursor: pointer; }
-.rules ul { padding-left: 18px; }
 
 .btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 10px 16px; cursor: pointer;
   font-weight: 500; transition: transform 0.08s, background 0.2s; white-space: nowrap; }
@@ -212,3 +209,34 @@ select { background: var(--card-solid); border: 1px solid var(--line); border-ra
   border-radius: 10px; opacity: 0; transition: all 0.25s; pointer-events: none; z-index: 20; max-width: calc(100% - 32px); text-align: center; }
 .toast.show { opacity: 1; transform: translateX(-50%); }
 @media (max-width: 899px) { .moon { left: auto; right: -24px; top: -24px; width: 80px; height: 80px; opacity: 0.45; } }
+
+/* 規則頁 */
+.link-btn { width: 100%; margin-top: 18px; background: transparent; }
+.rules-page { position: fixed; inset: 0; z-index: 30; overflow-y: auto; background: color-mix(in srgb, var(--bg) 96%, transparent); backdrop-filter: blur(6px); }
+.rules-inner { max-width: 760px; margin: 0 auto; padding: 16px 16px 40px; padding-top: max(16px, env(safe-area-inset-top)); }
+.rules-head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 8px 0; background: var(--bg); z-index: 1; }
+.rules-head h2 { font-family: var(--serif); margin: 0; font-size: 24px; }
+.rules-inner h3 { font-family: var(--serif); font-size: 18px; margin: 22px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.rules-inner ol, .rules-inner ul { padding-left: 20px; margin: 0; }
+.rules-inner li { margin: 6px 0; }
+.rule-now { padding: 10px 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--accent); }
+.rule-roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.rule-role { display: flex; gap: 10px; padding: 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); }
+.rule-role.wolf { border-color: color-mix(in srgb, var(--wolf) 45%, transparent); }
+.rule-role .rr-icon { font-size: 28px; line-height: 1; }
+.rule-role b { margin-right: 6px; font-size: 16px; }
+.rule-role p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.rule-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rule-table th, .rule-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rule-table th { color: var(--muted); font-weight: 500; }
+.rule-table td:first-child { white-space: nowrap; font-weight: 700; }
+.rules-inner > .btn.big { margin-top: 24px; }
+.setrow small { color: var(--muted); font-size: 12px; margin-left: 4px; }
+@media (max-width: 420px) {
+  .topbar { gap: 6px; padding-left: 12px; padding-right: 12px; }
+  .room-tag { font-size: 11px; }
+  .room-tag b { font-size: 14px; letter-spacing: 1px; }
+  .phase { font-size: 14px; }
+  .top-actions { gap: 4px; }
+  .icon-btn { min-width: 32px; height: 32px; padding: 0 8px; font-size: 14px; }
+}

@@ -6,22 +6,38 @@ const SCALE = Number(process.env.TIME_SCALE || 1); // 測試時可把時間縮�
 
 const ROLES = {
   werewolf: { name: '狼人', team: 'wolf' },
+  wolfKing: { name: '狼王', team: 'wolf' },
+  whiteWolfKing: { name: '白狼王', team: 'wolf' },
   villager: { name: '村民', team: 'good', kind: 'villager' },
   seer: { name: '預言家', team: 'good', kind: 'god' },
   witch: { name: '女巫', team: 'good', kind: 'god' },
   hunter: { name: '獵人', team: 'good', kind: 'god' },
+  guard: { name: '守衛', team: 'good', kind: 'god' },
+  gravekeeper: { name: '守墓人', team: 'good', kind: 'god' },
 };
+const GODS = ['seer', 'witch', 'hunter', 'guard', 'gravekeeper'];
+const SPECIAL_WOLVES = ['wolfKing', 'whiteWolfKing'];
+const SHOOTERS = ['hunter', 'wolfKing']; // 死亡時可以開槍（被毒死除外）
+
+const isWolf = (role) => ROLES[role]?.team === 'wolf';
 
 const MIN_PLAYERS = 4;
 const MAX_PLAYERS = 12;
 
 function defaultSetup(n) {
-  return {
+  const s = {
     wolves: n <= 5 ? 1 : n <= 7 ? 2 : n <= 10 ? 3 : 4,
+    wolfKing: false,
+    whiteWolfKing: false,
     seer: true,
     witch: true,
     hunter: n >= 7,
+    guard: n >= 10,
+    gravekeeper: false,
   };
+  if (n === 9 || n === 11) s.wolfKing = true;
+  if (n === 10 || n === 12) s.whiteWolfKing = true;
+  return s;
 }
 
 const id = () => crypto.randomBytes(6).toString('hex');
@@ -46,7 +62,7 @@ class Room {
     this.step = null;
     this.deadline = null;
     this.gameId = 0;
-    this.settings = { autoSetup: true, wolves: 2, seer: true, witch: true, hunter: false, speakTime: 90 };
+    this.settings = { autoSetup: true, speakTime: 90, ...defaultSetup(6) };
     this.log = [];
     this.chat = [];
     this.lastActive = Date.now();
@@ -62,12 +78,17 @@ class Room {
     this.witchSave = true;
     this.witchPoison = true;
     this.witchTonight = null; // {save:true} | {poison:id} | {skip:true}
-    this.hunterId = null;
-    this.hunterShot = undefined;
+    this.guardTarget = undefined; // undefined = 還沒決定，null = 空守
+    this.guardLast = null;
+    this.graveResults = [];
+    this.lastExiled = null; // 前一天被放逐的人（給守墓人）
+    this.shooterId = null;
+    this.shot = undefined;
     this.speaker = null;
     this.speakOrder = [];
     this.votes = {};
     this.lastVote = null;
+    this.exploded = null; // 白狼王自爆 {by, target}
     this.winner = null;
     this.revealed = {}; // 公開翻牌的身分
     this.lastNightDeaths = [];
@@ -77,6 +98,7 @@ class Room {
   get(pid) { return this.players.find((p) => p.id === pid); }
   alive() { return this.players.filter((p) => p.alive); }
   aliveRole(role) { return this.players.filter((p) => p.alive && p.role === role); }
+  aliveWolves() { return this.players.filter((p) => p.alive && isWolf(p.role)); }
   label(p) { return `${p.seat} 號 ${p.name}`; }
 
   addPlayer(name) {
@@ -118,17 +140,25 @@ class Room {
   setup() {
     const n = this.players.length;
     const s = this.settings.autoSetup ? defaultSetup(n) : this.settings;
-    const gods = (s.seer ? 1 : 0) + (s.witch ? 1 : 0) + (s.hunter ? 1 : 0);
-    return { wolves: s.wolves, seer: !!s.seer, witch: !!s.witch, hunter: !!s.hunter, villagers: n - s.wolves - gods };
+    const out = { wolves: s.wolves };
+    for (const k of [...SPECIAL_WOLVES, ...GODS]) out[k] = !!s[k];
+    const gods = GODS.filter((k) => out[k]).length;
+    out.villagers = n - s.wolves - gods;
+    return out;
   }
 
   updateSettings(patch) {
     if (this.phase !== 'lobby') return;
     const s = this.settings;
-    if ('autoSetup' in patch) s.autoSetup = !!patch.autoSetup;
-    if (!s.autoSetup && 'autoSetup' in patch) Object.assign(s, defaultSetup(this.players.length));
+    if ('autoSetup' in patch) {
+      s.autoSetup = !!patch.autoSetup;
+      if (!s.autoSetup) Object.assign(s, defaultSetup(this.players.length));
+    }
     if ('wolves' in patch) s.wolves = Math.max(1, Math.min(5, Number(patch.wolves) | 0));
-    for (const k of ['seer', 'witch', 'hunter']) if (k in patch) s[k] = !!patch[k];
+    for (const k of [...SPECIAL_WOLVES, ...GODS]) if (k in patch) s[k] = !!patch[k];
+    // 特殊狼人也算在狼人總數裡
+    const specials = SPECIAL_WOLVES.filter((k) => s[k]).length;
+    if (specials > s.wolves) s.wolves = specials;
     if ('speakTime' in patch) s.speakTime = Math.max(20, Math.min(300, Number(patch.speakTime) | 0));
   }
 
@@ -151,13 +181,13 @@ class Room {
   chatChannel(p) {
     if (this.phase === 'lobby' || this.phase === 'ended') return 'all';
     if (!p.alive) return 'dead';
-    if (this.phase === 'night') return p.role === 'werewolf' ? 'wolf' : null;
+    if (this.phase === 'night') return isWolf(p.role) ? 'wolf' : null;
     return 'all';
   }
 
   canSee(p, msg) {
     if (msg.ch === 'all') return true;
-    if (msg.ch === 'wolf') return p.role === 'werewolf' || this.phase === 'ended';
+    if (msg.ch === 'wolf') return isWolf(p.role) || this.phase === 'ended';
     if (msg.ch === 'dead') return !p.alive || this.phase === 'ended';
     return false;
   }
@@ -205,10 +235,9 @@ class Room {
     if (s.villagers < 0) throw new Error('角色數量比玩家還多，請調整配置');
     if (s.wolves * 2 >= n) throw new Error('狼人太多了，請減少狼人數量');
     const deck = [];
-    for (let i = 0; i < s.wolves; i++) deck.push('werewolf');
-    if (s.seer) deck.push('seer');
-    if (s.witch) deck.push('witch');
-    if (s.hunter) deck.push('hunter');
+    for (const k of SPECIAL_WOLVES) if (s[k]) deck.push(k);
+    while (deck.length < s.wolves) deck.push('werewolf');
+    for (const k of GODS) if (s[k]) deck.push(k);
     while (deck.length < n) deck.push('villager');
     const roles = shuffle(deck);
     this.resetGameState();
@@ -224,10 +253,12 @@ class Room {
 
   setupText() {
     const s = this.roleSetup || this.setup();
-    const parts = [`狼人 ×${s.wolves}`];
-    if (s.seer) parts.push('預言家');
-    if (s.witch) parts.push('女巫');
-    if (s.hunter) parts.push('獵人');
+    const plain = s.wolves - SPECIAL_WOLVES.filter((k) => s[k]).length;
+    const parts = [];
+    if (s.wolfKing) parts.push('狼王');
+    if (s.whiteWolfKing) parts.push('白狼王');
+    if (plain > 0) parts.push(`狼人 ×${plain}`);
+    for (const k of GODS) if (s[k]) parts.push(ROLES[k].name);
     if (s.villagers > 0) parts.push(`村民 ×${s.villagers}`);
     return parts.join('、');
   }
@@ -250,13 +281,22 @@ class Room {
     this.wolfTarget = null;
     this.seerDoneTonight = false;
     this.witchTonight = null;
+    this.guardTarget = undefined;
     this.lastVote = null;
     this.speaker = null;
+    this.exploded = null;
+    // 守墓人得知昨天被放逐者的陣營
+    if (this.lastExiled && this.aliveRole('gravekeeper').length) {
+      const p = this.get(this.lastExiled);
+      this.graveResults.push({ night: this.nightNo, target: p.id, wolf: isWolf(p.role) });
+    }
+    this.lastExiled = null;
     this.sys(`🌙 第 ${this.nightNo} 夜，天黑請閉眼`);
 
     await this.runStep('night_act', 45, 12);
     if (this.stale(gid)) return;
     this.wolfTarget = this.resolveWolfVotes();
+    this.guardLast = this.guardTarget || null;
 
     const witch = this.aliveRole('witch')[0];
     if (witch && (this.witchSave || this.witchPoison)) await this.runStep('night_witch', 25, 5);
@@ -264,11 +304,19 @@ class Room {
     if (this.stale(gid)) return;
 
     const deaths = [];
-    const saved = this.witchTonight?.save;
-    if (this.wolfTarget && !saved) deaths.push({ id: this.wolfTarget, cause: 'wolf' });
+    const t = this.wolfTarget;
+    if (t) {
+      const saved = !!this.witchTonight?.save;
+      const guarded = this.guardTarget === t;
+      // 守衛擋刀；女巫救人；同守同救則死亡
+      if (saved === guarded) deaths.push({ id: t, cause: 'wolf' });
+    }
     const poison = this.witchTonight?.poison;
-    if (poison && !deaths.some((d) => d.id === poison)) deaths.push({ id: poison, cause: 'poison' });
-    else if (poison) deaths.find((d) => d.id === poison).cause = 'poison'; // 被毒的獵人不能開槍
+    if (poison) {
+      const d = deaths.find((x) => x.id === poison);
+      if (d) d.cause = 'poison'; // 被毒的獵人、狼王不能開槍
+      else deaths.push({ id: poison, cause: 'poison' });
+    }
     deaths.forEach((d) => (this.get(d.id).alive = false));
     this.lastNightDeaths = shuffle(deaths);
   }
@@ -295,13 +343,7 @@ class Room {
     await this.runStep('announce', 6);
     if (this.stale(gid) || this.checkWin()) return;
 
-    for (const d of deaths) {
-      const p = this.get(d.id);
-      if (p.role === 'hunter' && d.cause === 'wolf') {
-        await this.hunterTurn(p, gid);
-        if (this.stale(gid) || this.checkWin()) return;
-      }
-    }
+    if (!(await this.deathSkills(deaths, gid))) return;
 
     if (this.nightNo === 1 && deaths.length) {
       await this.speeches(deaths.map((d) => d.id), 'lastwords', gid);
@@ -310,31 +352,71 @@ class Room {
 
     // 從死者的下一位（或隨機一位）開始輪流發言
     const alive = this.alive();
-    let startSeat = deaths.length ? this.get(deaths[0].id).seat : alive[crypto.randomInt(alive.length)].seat - 1;
+    const startSeat = deaths.length ? this.get(deaths[0].id).seat : alive[crypto.randomInt(alive.length)].seat - 1;
     const N = this.players.length;
     const key = (p) => (((p.seat - startSeat - 1) % N) + N) % N;
     const order = [...alive].sort((a, b) => key(a) - key(b));
     this.sys('開始輪流發言');
     await this.speeches(order.map((p) => p.id), 'discuss', gid);
     if (this.stale(gid)) return;
+    if (this.exploded) return this.afterExplode(gid);
 
     this.votes = {};
     this.sys('🗳️ 開始投票');
     await this.runStep('vote', 30);
     if (this.stale(gid)) return;
+    if (this.exploded) return this.afterExplode(gid);
     const exiled = this.tallyVotes();
     await this.runStep('vote_result', 7);
     if (this.stale(gid)) return;
 
     if (exiled) {
       exiled.alive = false;
+      this.lastExiled = exiled.id;
       if (this.checkWin()) return;
-      if (exiled.role === 'hunter') {
-        await this.hunterTurn(exiled, gid);
-        if (this.stale(gid) || this.checkWin()) return;
-      }
+      if (!(await this.deathSkills([{ id: exiled.id, cause: 'vote' }], gid))) return;
       await this.speeches([exiled.id], 'lastwords', gid);
     }
+  }
+
+  // 白狼王自爆後：直接進入黑夜
+  async afterExplode(gid) {
+    const { target } = this.exploded;
+    this.speaker = null;
+    this.speakOrder = [];
+    await this.runStep('announce', 6);
+    if (this.stale(gid) || this.checkWin()) return;
+    if (target) await this.deathSkills([{ id: target, cause: 'whiteWolf' }], gid);
+  }
+
+  // 處理死亡技能（獵人、狼王開槍），可以連鎖。回傳 false 表示遊戲結束
+  async deathSkills(deaths, gid) {
+    for (const d of deaths) {
+      const p = this.get(d.id);
+      if (!SHOOTERS.includes(p.role) || d.cause === 'poison') continue;
+      const target = await this.shootTurn(p, gid);
+      if (this.stale(gid) || this.checkWin()) return false;
+      if (target && !(await this.deathSkills([{ id: target, cause: 'shot' }], gid))) return false;
+    }
+    return !this.stale(gid);
+  }
+
+  async shootTurn(shooter, gid) {
+    this.shooterId = shooter.id;
+    this.shot = undefined;
+    await this.runStep('shoot', 20);
+    this.shooterId = null;
+    if (this.stale(gid)) return null;
+    const t = this.shot && this.get(this.shot);
+    if (t && t.alive) {
+      t.alive = false;
+      this.revealed[shooter.id] = shooter.role;
+      this.sys(`🔫 ${this.label(shooter)} 是${ROLES[shooter.role].name}，開槍帶走了 ${this.label(t)}`);
+      await this.runStep('announce', 5);
+      return t.id;
+    }
+    this.sys(`${this.label(shooter)} 沒有發動技能`);
+    return null;
   }
 
   tallyVotes() {
@@ -365,23 +447,6 @@ class Room {
     return exiled;
   }
 
-  async hunterTurn(hunter, gid) {
-    this.hunterId = hunter.id;
-    this.hunterShot = undefined;
-    await this.runStep('hunter', 20);
-    if (this.stale(gid)) return;
-    const t = this.hunterShot && this.get(this.hunterShot);
-    if (t && t.alive) {
-      t.alive = false;
-      this.revealed[hunter.id] = 'hunter';
-      this.sys(`🔫 ${this.label(hunter)} 是獵人，開槍帶走了 ${this.label(t)}`);
-      await this.runStep('announce', 5);
-    } else {
-      this.sys(`${this.label(hunter)} 沒有發動技能`);
-    }
-    this.hunterId = null;
-  }
-
   async speeches(ids, kind, gid) {
     this.speakOrder = ids.slice();
     for (const pid of ids) {
@@ -390,7 +455,7 @@ class Room {
       if (kind === 'discuss' && !p.alive) continue;
       this.speaker = pid;
       await this.runStep(kind, this.settings.speakTime);
-      if (this.stale(gid)) return;
+      if (this.stale(gid) || this.exploded) break;
     }
     this.speaker = null;
     this.speakOrder = [];
@@ -398,11 +463,11 @@ class Room {
 
   checkWin() {
     const alive = this.alive();
-    const wolves = alive.filter((p) => p.role === 'werewolf').length;
+    const wolves = alive.filter((p) => isWolf(p.role)).length;
     const villagers = alive.filter((p) => p.role === 'villager').length;
     const gods = alive.filter((p) => ROLES[p.role].kind === 'god').length;
     const s = this.roleSetup;
-    const godsTotal = (s.seer ? 1 : 0) + (s.witch ? 1 : 0) + (s.hunter ? 1 : 0);
+    const godsTotal = GODS.filter((k) => s[k]).length;
     let winner = null;
     if (wolves === 0) winner = 'good';
     else if ((s.villagers > 0 && villagers === 0) || (godsTotal > 0 && gods === 0)) winner = 'wolf';
@@ -417,6 +482,7 @@ class Room {
     this.step = null;
     this.deadline = null;
     this.speaker = null;
+    this.shooterId = null;
     clearTimeout(this._timer);
     clearTimeout(this._earlyTimer);
     this._resolve = null;
@@ -457,7 +523,7 @@ class Room {
         return this.endStep();
 
       case 'wolfVote':
-        this.need(p, 'night_act', 'werewolf');
+        if (this.step !== 'night_act' || !p.alive || !isWolf(p.role)) throw new Error('你不能這樣做');
         if (target && !target.alive) throw new Error('目標已經死亡');
         this.wolfVotes[p.id] = target ? target.id : null;
         return this.checkNightDone();
@@ -467,7 +533,16 @@ class Room {
         if (this.seerDoneTonight) throw new Error('今晚已經查驗過了');
         if (!target || !target.alive || target.id === p.id) throw new Error('請選擇一位存活的其他玩家');
         this.seerDoneTonight = true;
-        this.seerResults.push({ night: this.nightNo, target: target.id, wolf: target.role === 'werewolf' });
+        this.seerResults.push({ night: this.nightNo, target: target.id, wolf: isWolf(target.role) });
+        return this.checkNightDone();
+      }
+
+      case 'guard': {
+        this.need(p, 'night_act', 'guard');
+        if (this.guardTarget !== undefined) throw new Error('今晚已經守護過了');
+        if (target && !target.alive) throw new Error('請選擇一位存活的玩家');
+        if (target && target.id === this.guardLast) throw new Error('不能連續兩晚守護同一個人');
+        this.guardTarget = target ? target.id : null;
         return this.checkNightDone();
       }
 
@@ -491,11 +566,23 @@ class Room {
         return this.finishWhenAllowed();
       }
 
-      case 'hunterShoot':
-        if (this.step !== 'hunter' || this.hunterId !== p.id) throw new Error('現在不是你開槍的時候');
+      case 'shoot':
+        if (this.step !== 'shoot' || this.shooterId !== p.id) throw new Error('現在不是你開槍的時候');
         if (target && (!target.alive || target.id === p.id)) throw new Error('請選擇一位存活的玩家');
-        this.hunterShot = target ? target.id : null;
+        this.shot = target ? target.id : null;
         return this.endStep();
+
+      case 'explode': {
+        if (p.role !== 'whiteWolfKing' || !p.alive) throw new Error('只有白狼王可以自爆');
+        if (this.phase !== 'day' || !['discuss', 'vote'].includes(this.step) || this.exploded) throw new Error('只能在白天發言或投票時自爆');
+        if (!target || !target.alive || target.id === p.id) throw new Error('請選擇要帶走的玩家');
+        p.alive = false;
+        target.alive = false;
+        this.revealed[p.id] = 'whiteWolfKing';
+        this.exploded = { by: p.id, target: target.id };
+        this.sys(`💥 ${this.label(p)} 是白狼王，自爆並帶走了 ${this.label(target)}！今天直接進入黑夜`);
+        return this.endStep();
+      }
 
       case 'endSpeech':
         if ((this.step !== 'discuss' && this.step !== 'lastwords') || this.speaker !== p.id) throw new Error('現在不是你發言');
@@ -520,21 +607,21 @@ class Room {
   }
 
   checkNightDone() {
-    const wolves = this.aliveRole('werewolf');
-    const picks = wolves.map((w) => this.wolfVotes[w.id]);
+    const picks = this.aliveWolves().map((w) => this.wolfVotes[w.id]);
     const wolvesDone = picks.every((t) => t !== undefined) && new Set(picks).size === 1;
     const seerDone = this.aliveRole('seer').length === 0 || this.seerDoneTonight;
-    if (wolvesDone && seerDone) this.finishWhenAllowed();
+    const guardDone = this.aliveRole('guard').length === 0 || this.guardTarget !== undefined;
+    if (wolvesDone && seerDone && guardDone) this.finishWhenAllowed();
   }
 
   // ---------- 每位玩家看到的畫面 ----------
   stateFor(pid) {
     const me = this.get(pid);
     const ended = this.phase === 'ended';
-    const isWolf = me.role === 'werewolf';
+    const meWolf = isWolf(me.role);
     const players = this.players.map((q) => {
       let role = null;
-      if (ended || q.id === me.id || (isWolf && q.role === 'werewolf')) role = q.role;
+      if (ended || q.id === me.id || (meWolf && isWolf(q.role))) role = q.role;
       else if (this.revealed[q.id]) role = this.revealed[q.id];
       return { id: q.id, name: q.name, seat: q.seat, alive: q.alive, connected: q.connected, role };
     });
@@ -570,14 +657,17 @@ class Room {
       s.votedCount = Object.keys(this.votes).length;
       s.aliveCount = this.alive().length;
     }
-    if (isWolf && this.step === 'night_act') s.wolfVotes = this.wolfVotes;
+    if (meWolf && this.step === 'night_act') s.wolfVotes = this.wolfVotes;
     if (me.role === 'seer') s.seer = { results: this.seerResults, doneTonight: this.seerDoneTonight };
+    if (me.role === 'gravekeeper') s.grave = { results: this.graveResults };
+    if (me.role === 'guard') s.guard = { last: this.guardLast, tonight: this.guardTarget };
     if (me.role === 'witch') {
       s.witch = { hasSave: this.witchSave, hasPoison: this.witchPoison, done: !!this.witchTonight };
       if (this.step === 'night_witch' && this.witchSave) s.witch.killed = this.wolfTarget;
       if (this.step === 'night_witch' && !this.witchSave && !this.witchTonight) s.witch.noInfo = true;
     }
-    if (this.step === 'hunter') s.hunterTurn = this.hunterId === pid;
+    if (me.role === 'whiteWolfKing') s.canExplode = me.alive && this.phase === 'day' && ['discuss', 'vote'].includes(this.step) && !this.exploded;
+    if (this.step === 'shoot') s.shootTurn = this.shooterId === pid;
     return s;
   }
 }

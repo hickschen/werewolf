@@ -5,30 +5,78 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
   const ROLE = {
-    werewolf: { name: '狼人', icon: '🐺', desc: '每晚和隊友一起選一個人殺掉。白天隱藏身分，想辦法讓好人被投出去。', team: 'wolf' },
-    villager: { name: '村民', icon: '🧑‍🌾', desc: '沒有特殊技能，靠發言推理和投票找出狼人。', team: 'good' },
-    seer: { name: '預言家', icon: '🔮', desc: '每晚可以查驗一位玩家，知道他是好人還是狼人。', team: 'good' },
-    witch: { name: '女巫', icon: '🧪', desc: '有一瓶解藥和一瓶毒藥，各只能用一次；同一晚只能用一瓶，不能救自己。', team: 'good' },
-    hunter: { name: '獵人', icon: '🏹', desc: '被狼人殺死或被投票出局時，可以開槍帶走一人（被毒死不能開槍）。', team: 'good' },
+    werewolf: { name: '狼人', icon: '🐺', team: 'wolf', desc: '每晚和隊友一起選一個人殺掉。白天隱藏身分，想辦法讓好人被投出去。' },
+    wolfKing: { name: '狼王', icon: '👑', team: 'wolf', desc: '和狼人一起殺人。被殺死或被放逐時可以開槍帶走一人（被毒死不能開槍）。' },
+    whiteWolfKing: { name: '白狼王', icon: '💥', team: 'wolf', desc: '和狼人一起殺人。白天發言或投票時可以自爆，帶走一名玩家，當天直接進入黑夜。' },
+    villager: { name: '村民', icon: '🧑‍🌾', team: 'good', desc: '沒有特殊技能，靠發言推理和投票找出狼人。' },
+    seer: { name: '預言家', icon: '🔮', team: 'good', desc: '每晚可以查驗一位玩家，知道他是好人還是狼人。' },
+    witch: { name: '女巫', icon: '🧪', team: 'good', desc: '有一瓶解藥和一瓶毒藥，各只能用一次；同一晚只能用一瓶，不能救自己。' },
+    hunter: { name: '獵人', icon: '🏹', team: 'good', desc: '被狼人殺死或被投票出局時，可以開槍帶走一人（被毒死不能開槍）。' },
+    guard: { name: '守衛', icon: '🛡️', team: 'good', desc: '每晚守護一人不被狼人殺害，可以守自己，但不能連續兩晚守同一人。' },
+    gravekeeper: { name: '守墓人', icon: '🪦', team: 'good', desc: '每晚會得知前一天被投票放逐的人是好人還是狼人。' },
   };
+  const isWolfRole = (r) => ROLE[r]?.team === 'wolf';
+  const ROLE_ORDER = ['werewolf', 'wolfKing', 'whiteWolfKing', 'villager', 'seer', 'witch', 'hunter', 'guard', 'gravekeeper'];
 
-  const RULES = `
-    <ul>
-      <li>遊戲分成「黑夜」和「白天」輪流進行。</li>
-      <li><b>黑夜</b>：狼人選一人殺害；預言家查驗一人；女巫決定要不要用藥。</li>
-      <li><b>白天</b>：公布昨晚死者，存活玩家依序發言，最後投票放逐一人（平票則無人出局）。</li>
-      <li>第一晚死亡的玩家、以及被放逐的玩家，可以留下遺言。</li>
-      <li><b>好人勝利</b>：所有狼人出局。</li>
-      <li><b>狼人勝利</b>：所有村民出局，或所有神職（預言家、女巫、獵人）出局（屠邊）。</li>
-      <li>建議大家同時開 LINE 或 Discord 語音，輪到誰發言就由誰說話。</li>
-    </ul>`;
+  function rulesHtml(setupText) {
+    const roleCard = (k) => {
+      const r = ROLE[k];
+      return `<div class="rule-role ${r.team}"><div class="rr-icon">${r.icon}</div><div><b>${r.name}</b>
+        <span class="tag ${r.team === 'wolf' ? 'wolf' : 'good'}">${r.team === 'wolf' ? '狼人陣營' : ['villager'].includes(k) ? '好人・平民' : '好人・神職'}</span>
+        <p>${r.desc}</p></div></div>`;
+    };
+    return `
+      ${setupText ? `<div class="rule-now">本局配置：${esc(setupText)}</div>` : ''}
+      <h3>遊戲流程</h3>
+      <ol>
+        <li><b>發身分</b>：每個人只知道自己的身分，狼人會知道隊友是誰。</li>
+        <li><b>黑夜</b>：狼人一起選一人殺害；預言家查驗一人；守衛守護一人；接著女巫決定要不要用藥。守墓人會得知昨天被放逐者的陣營。</li>
+        <li><b>天亮</b>：公布昨晚死亡的玩家（不公布死因）。</li>
+        <li><b>發言</b>：存活玩家依座位輪流發言。</li>
+        <li><b>投票</b>：每人投一票放逐一人，可以棄票；最高票者出局，平票則無人出局。</li>
+        <li>回到黑夜，重複直到分出勝負。</li>
+      </ol>
+      <h3>勝負條件（屠邊）</h3>
+      <ul>
+        <li>🎉 <b>好人勝利</b>：所有狼人陣營（含狼王、白狼王）都出局。</li>
+        <li>🐺 <b>狼人勝利</b>：所有村民出局，<b>或</b>所有神職（預言家、女巫、獵人、守衛、守墓人）出局。</li>
+      </ul>
+      <h3>角色</h3>
+      <div class="rule-roles">${ROLE_ORDER.map(roleCard).join('')}</div>
+      <h3>細節規則</h3>
+      <ul>
+        <li><b>同守同救</b>：守衛守護的人同時被女巫救，這個人反而會死亡。</li>
+        <li>守衛只能擋狼人的刀，擋不住女巫的毒藥。</li>
+        <li>女巫的解藥用掉之後，就不會再知道每晚誰被殺。</li>
+        <li>獵人、狼王被毒死時不能開槍；開槍後會公開身分。被開槍帶走的獵人或狼王也可以再開槍。</li>
+        <li>白狼王自爆後不投票，直接進入黑夜；自爆不算被放逐，守墓人不會得到資訊。</li>
+        <li>預言家查驗狼王、白狼王，結果都是「狼人」。</li>
+        <li>第一晚死亡的玩家，以及白天被放逐的玩家，可以留遺言。</li>
+        <li>出局的玩家不能再發言或投票，只能在「亡者頻道」聊天。</li>
+      </ul>
+      <h3>依人數自動配置</h3>
+      <table class="rule-table"><tr><th>人數</th><th>配置</th></tr>
+        <tr><td>4–5</td><td>狼人 ×1、預言家、女巫、村民</td></tr>
+        <tr><td>6</td><td>狼人 ×2、預言家、女巫、村民 ×2</td></tr>
+        <tr><td>7</td><td>狼人 ×2、預言家、女巫、獵人、村民 ×2</td></tr>
+        <tr><td>8</td><td>狼人 ×3、預言家、女巫、獵人、村民 ×2</td></tr>
+        <tr><td>9</td><td>狼王、狼人 ×2、預言家、女巫、獵人、村民 ×3</td></tr>
+        <tr><td>10</td><td>白狼王、狼人 ×2、預言家、女巫、獵人、守衛、村民 ×3</td></tr>
+        <tr><td>11</td><td>狼王、狼人 ×3、預言家、女巫、獵人、守衛、村民 ×3</td></tr>
+        <tr><td>12</td><td>白狼王、狼人 ×3、預言家、女巫、獵人、守衛、村民 ×4</td></tr>
+      </table>
+      <p class="setup-line">房主可以關掉「依人數自動配置」，自己選擇角色。</p>
+      <h3>小提醒</h3>
+      <ul><li>建議大家同時開 LINE 或 Discord 語音，輪到誰發言就由誰說話。</li>
+      <li>點一下自己的身分卡可以遮住身分，避免旁人偷看。</li></ul>`;
+  }
 
   const STEP_TITLE = {
     reveal: '查看身分',
     night_act: '黑夜',
     night_witch: '黑夜',
     announce: '天亮了',
-    hunter: '技能發動',
+    shoot: '技能發動',
     lastwords: '遺言',
     discuss: '輪流發言',
     vote: '投票',
@@ -85,7 +133,6 @@
   const isHost = () => S.hostId === S.you;
 
   // ---------- 首頁 ----------
-  $('#rulesBody').innerHTML = RULES;
   $('#nameInput').value = load('ww_name') || '';
   const urlRoom = new URLSearchParams(location.search).get('room');
   if (urlRoom) $('#codeInput').value = urlRoom;
@@ -148,9 +195,9 @@
     if (S.phase === 'ended' && prev?.phase !== 'ended') speak(S.winner === 'good' ? '好人陣營獲勝' : '狼人陣營獲勝');
     const myTurn =
       (S.speaker === S.you && (S.step === 'discuss' || S.step === 'lastwords')) ||
-      (S.step === 'night_act' && m.alive && ['werewolf', 'seer'].includes(S.role)) ||
+      (S.step === 'night_act' && m.alive && (isWolfRole(S.role) || ['seer', 'guard'].includes(S.role))) ||
       (S.step === 'night_witch' && m.alive && S.role === 'witch' && S.witch && !S.witch.done && (S.witch.hasSave || S.witch.hasPoison)) ||
-      (S.step === 'hunter' && S.hunterTurn) ||
+      (S.step === 'shoot' && S.shootTurn) ||
       (S.step === 'vote' && m.alive);
     if (myTurn) buzz();
     if (S.speaker === S.you && S.step === 'discuss') speak('輪到你發言了');
@@ -203,8 +250,8 @@
     } else if (S.step === 'announce') {
       const last = S.log[S.log.length - 1];
       h = '☀️ 天亮了'; p = last ? last.text : '';
-    } else if (S.step === 'hunter') {
-      h = '🏹 有人發動技能'; p = '請等待…';
+    } else if (S.step === 'shoot') {
+      h = '🔫 有人發動技能'; p = '請等待…';
     } else if (S.step === 'discuss' || S.step === 'lastwords') {
       const sp = P(S.speaker);
       h = S.step === 'lastwords' ? `${label(sp)} 留遺言` : `${label(sp)} 發言中`;
@@ -229,8 +276,8 @@
     }
     box.className = `my-role ${r.team === 'wolf' ? 'wolf' : ''} ${roleCovered ? 'covered' : ''} ${me().alive ? '' : 'dead'}`;
     let extra = '';
-    if (S.role === 'werewolf') {
-      const mates = S.players.filter((p) => p.role === 'werewolf' && p.id !== S.you).map((p) => `${p.seat}號`);
+    if (isWolfRole(S.role)) {
+      const mates = S.players.filter((p) => isWolfRole(p.role) && p.id !== S.you).map((p) => `${p.seat}號${p.role !== 'werewolf' ? '(' + ROLE[p.role].name + ')' : ''}`);
       extra = mates.length ? `　隊友：${mates.join('、')}` : '';
     }
     if (S.role === 'witch' && S.witch) extra = `　解藥 ${S.witch.hasSave ? '✓' : '✗'}　毒藥 ${S.witch.hasPoison ? '✓' : '✗'}`;
@@ -250,9 +297,9 @@
     if (S.step === 'reveal') {
       const r = ROLE[S.role];
       let extra = '';
-      if (S.role === 'werewolf') {
-        const mates = S.players.filter((p) => p.role === 'werewolf' && p.id !== S.you);
-        extra = mates.length ? `<p>你的狼隊友：${mates.map((p) => esc(label(p))).join('、')}</p>` : '';
+      if (isWolfRole(S.role)) {
+        const mates = S.players.filter((p) => isWolfRole(p.role) && p.id !== S.you);
+        extra = mates.length ? `<p>你的狼隊友：${mates.map((p) => esc(label(p)) + (p.role !== 'werewolf' ? `（${ROLE[p.role].name}）` : '')).join('、')}</p>` : '';
       }
       el.innerHTML = `<div class="reveal-card ${r.team}"><div class="r-icon">${r.icon}</div>
         <div>你的身分是</div><div class="r-name">${r.name}</div><p>${esc(r.desc)}</p>${extra}
@@ -266,18 +313,20 @@
       ? `<div class="setup-line">🌐 外網網址：${esc(publicUrl)}（邀請連結已自動使用這個網址）</div>` : '';
     const s = S.settings, su = S.setup;
     const sw = (k, on) => `<button class="switch ${on ? 'on' : ''}" data-action="setting" data-key="${k}" data-val="${!on}" aria-label="${k}"></button>`;
-    const setupLine = `狼人 ×${su.wolves}${su.seer ? '、預言家' : ''}${su.witch ? '、女巫' : ''}${su.hunter ? '、獵人' : ''}、村民 ×${Math.max(0, su.villagers)}`;
+    const plainWolves = su.wolves - (su.wolfKing ? 1 : 0) - (su.whiteWolfKing ? 1 : 0);
+    const setupLine = [su.wolfKing && '狼王', su.whiteWolfKing && '白狼王', plainWolves > 0 && `狼人 ×${plainWolves}`,
+      ...['seer', 'witch', 'hunter', 'guard', 'gravekeeper'].filter((k) => su[k]).map((k) => ROLE[k].name),
+      `村民 ×${Math.max(0, su.villagers)}`].filter(Boolean).join('、') + (su.villagers < 0 ? '（角色比玩家多，請減少角色）' : '');
     let settings = '';
     if (isHost()) {
       settings = `<div class="settings"><h3>遊戲設定</h3>
         <div class="setrow"><span>依人數自動配置角色</span>${sw('autoSetup', s.autoSetup)}</div>
         ${s.autoSetup ? '' : `
-        <div class="setrow"><span>狼人數量</span><div class="stepper">
+        <div class="setrow"><span>狼人總數<small>（含狼王、白狼王）</small></span><div class="stepper">
           <button data-action="setting" data-key="wolves" data-val="${s.wolves - 1}">−</button><b>${s.wolves}</b>
           <button data-action="setting" data-key="wolves" data-val="${s.wolves + 1}">＋</button></div></div>
-        <div class="setrow"><span>預言家</span>${sw('seer', s.seer)}</div>
-        <div class="setrow"><span>女巫</span>${sw('witch', s.witch)}</div>
-        <div class="setrow"><span>獵人</span>${sw('hunter', s.hunter)}</div>`}
+        ${['wolfKing', 'whiteWolfKing', 'seer', 'witch', 'hunter', 'guard', 'gravekeeper'].map((k) =>
+          `<div class="setrow"><span>${ROLE[k].icon} ${ROLE[k].name}</span>${sw(k, s[k])}</div>`).join('')}`}
         <div class="setrow"><span>每人發言時間</span>
           <select data-action="speakTime">${[30, 60, 90, 120, 180].map((v) => `<option value="${v}" ${v === s.speakTime ? 'selected' : ''}>${v} 秒</option>`).join('')}</select></div>
         <div class="setrow"><span class="setup-line">${esc(setupLine)}</span></div>
@@ -297,11 +346,13 @@
     if (!m) return null;
     const aliveOther = (p) => p.alive && p.id !== S.you;
     if (S.step === 'night_act' && m.alive) {
-      if (S.role === 'werewolf') return { kind: 'wolf', filter: (p) => p.alive };
+      if (isWolfRole(S.role)) return { kind: 'wolf', filter: (p) => p.alive };
       if (S.role === 'seer' && !S.seer?.doneTonight) return { kind: 'seer', filter: aliveOther };
+      if (S.role === 'guard' && S.guard && S.guard.tonight === undefined) return { kind: 'guard', filter: (p) => p.alive && p.id !== S.guard.last };
     }
     if (S.step === 'night_witch' && m.alive && S.role === 'witch' && S.witch && !S.witch.done && S.witch.hasPoison) return { kind: 'poison', filter: aliveOther };
-    if (S.step === 'hunter' && S.hunterTurn) return { kind: 'hunter', filter: aliveOther };
+    if (S.step === 'shoot' && S.shootTurn) return { kind: 'shoot', filter: aliveOther };
+    if (S.canExplode && S.step === 'discuss') return { kind: 'explode', filter: aliveOther };
     if (S.step === 'vote' && m.alive) return { kind: 'vote', filter: (p) => p.alive };
     return null;
   }
@@ -310,6 +361,8 @@
     const mode = pickMode();
     const seerMap = {};
     (S.seer?.results || []).forEach((r) => (seerMap[r.target] = r.wolf));
+    const graveMap = {};
+    (S.grave?.results || []).forEach((r) => (graveMap[r.target] = r.wolf));
     const wolfPicks = {};
     if (S.wolfVotes) for (const [w, t] of Object.entries(S.wolfVotes)) if (t) (wolfPicks[t] = wolfPicks[t] || []).push(P(w)?.seat);
     const tally = S.step === 'vote_result' && S.lastVote ? S.lastVote.tally : null;
@@ -325,6 +378,8 @@
       if (!p.connected) tags.push('<span class="tag off">離線</span>');
       if (p.role && (p.id !== S.you || S.phase === 'ended')) tags.push(`<span class="tag ${ROLE[p.role].team === 'wolf' ? 'wolf' : 'good'}">${ROLE[p.role].name}</span>`);
       if (p.id in seerMap && S.phase !== 'ended') tags.push(`<span class="tag ${seerMap[p.id] ? 'wolf' : 'good'}">${seerMap[p.id] ? '查殺' : '金水'}</span>`);
+      if (p.id in graveMap && S.phase !== 'ended') tags.push(`<span class="tag ${graveMap[p.id] ? 'wolf' : 'good'}">🪦${graveMap[p.id] ? '狼人' : '好人'}</span>`);
+      if (S.guard?.tonight && S.guard.tonight === p.id && S.phase === 'night') tags.push('<span class="tag good">🛡️ 守護</span>');
       if (!p.alive) tags.push('<span class="tag">💀 出局</span>');
       if (S.speaker === p.id) tags.push('<span class="tag good">🎤 發言</span>');
       if (voteFor[p.id]) tags.push(`<span class="tag">←${voteFor[p.id].join(',')}</span>`);
@@ -358,7 +413,7 @@
     } else if (S.phase === 'ended') {
       if (isHost()) out.push(`<button class="btn primary big" data-action="lobby">再來一局</button>`);
       else out.push(box('', '等待房主開始下一局…'));
-    } else if (S.step === 'night_act' && m.alive && S.role === 'werewolf') {
+    } else if (S.step === 'night_act' && m.alive && isWolfRole(S.role)) {
       const myPick = S.wolfVotes?.[S.you];
       const status = myPick === undefined ? '尚未決定' : myPick === null ? '你選擇空刀' : `你選了 ${esc(label(P(myPick)))}`;
       out.push(box('🐺 狼人請選擇今晚的目標', `點選玩家後按確認。隊友的選擇會顯示在卡片左上角，大家要選同一人。（${status}）`,
@@ -368,6 +423,12 @@
       const r = S.seer.results.filter((x) => x.night === S.nightNo)[0];
       if (r) out.push(box('🔮 查驗結果', `<span class="result">${esc(label(P(r.target)))} 是 <b class="${r.wolf ? 'wolf' : 'good'}">${r.wolf ? '狼人' : '好人'}</b></span>`));
       else out.push(box('🔮 預言家請查驗一位玩家', '點選一位玩家後按「查驗」', `<button class="btn primary" data-action="seer" ${sel ? '' : 'disabled'}>查驗 ${selName()}</button>`));
+    } else if (S.step === 'night_act' && m.alive && S.role === 'guard') {
+      const g = S.guard;
+      if (g.tonight !== undefined) out.push(box('🛡️ 守衛', g.tonight ? `今晚你守護了 <b>${esc(label(P(g.tonight)))}</b>，等待天亮…` : '今晚你選擇不守護任何人。'));
+      else out.push(box('🛡️ 守衛請選擇今晚要守護的人', `可以守護自己，但不能連續兩晚守同一人${g.last ? `（昨晚守護 ${esc(label(P(g.last)))}）` : ''}。`,
+        `<button class="btn good" data-action="guard" ${sel ? '' : 'disabled'}>守護 ${selName()}</button>
+         <button class="btn" data-action="guardNone">今晚不守</button>`));
     } else if (S.step === 'night_witch' && m.alive && S.role === 'witch' && (S.witch.hasSave || S.witch.hasPoison || S.witch.done)) {
       const w = S.witch;
       if (w.done) out.push(box('🧪 女巫', '你已經做出決定，等待天亮…'));
@@ -385,10 +446,15 @@
       }
     } else if (S.step === 'reveal') {
       // 身分卡已顯示
+    } else if (S.phase === 'night' && m.alive && S.role === 'gravekeeper') {
+      const r = (S.grave?.results || []).find((x) => x.night === S.nightNo);
+      out.push(box('🪦 守墓人', S.nightNo === 1 ? '第一晚還沒有人被放逐。請閉眼，等待天亮…'
+        : r ? `昨天被放逐的 ${esc(label(P(r.target)))} 是 <b class="${r.wolf ? 'wolf' : 'good'}">${r.wolf ? '狼人陣營' : '好人陣營'}</b>`
+        : '昨天沒有人被放逐，今晚沒有資訊。'));
     } else if (S.phase === 'night') {
       out.push(box('', m.alive ? '😴 請閉眼，等待天亮…' : '👻 你已出局，請安靜觀戰'));
-    } else if (S.step === 'hunter') {
-      if (S.hunterTurn) out.push(box('🏹 你是獵人，可以開槍帶走一人', '點選玩家後按「開槍」，或選擇不開槍。',
+    } else if (S.step === 'shoot') {
+      if (S.shootTurn) out.push(box(`🔫 你是${ROLE[S.role].name}，可以開槍帶走一人`, '點選玩家後按「開槍」，或選擇不開槍。開槍後會公開你的身分。',
         `<button class="btn danger" data-action="shoot" ${sel ? '' : 'disabled'}>開槍 ${selName()}</button>
          <button class="btn" data-action="noShoot">不開槍</button>`));
     } else if (S.step === 'discuss' || S.step === 'lastwords') {
@@ -412,6 +478,10 @@
       out.push(box('', '出局的玩家不能投票'));
     }
 
+    if (S.canExplode) {
+      out.push(box('💥 白狼王自爆', `點選一位玩家後按「自爆」，你會出局並帶走他，今天直接進入黑夜。${sel ? `（目前選擇：${selName()}）` : ''}`,
+        `<button class="btn danger" data-action="explode" ${sel ? '' : 'disabled'}>自爆並帶走 ${selName()}</button>`));
+    }
     if (hostSkip) out.push(`<div class="btn-row"><button class="btn small" data-action="skip">⏭ 房主：跳過這個階段</button></div>`);
     $('#actions').innerHTML = out.join('');
   }
@@ -514,13 +584,27 @@
       case 'save': emit('act', { type: 'witch', save: true }); break;
       case 'poison': emit('act', { type: 'witch', poison: true, target: sel }); break;
       case 'witchSkip': emit('act', { type: 'witch', skip: true }); break;
-      case 'shoot': emit('act', { type: 'hunterShoot', target: sel }); break;
-      case 'noShoot': emit('act', { type: 'hunterShoot', target: null }); break;
+      case 'shoot': emit('act', { type: 'shoot', target: sel }); break;
+      case 'noShoot': emit('act', { type: 'shoot', target: null }); break;
+      case 'guard': emit('act', { type: 'guard', target: sel }); break;
+      case 'guardNone': emit('act', { type: 'guard', target: null }); break;
+      case 'explode':
+        if (!sel) { toast('請先點選要帶走的玩家'); break; }
+        if (confirm(`確定要自爆並帶走 ${label(P(sel))} 嗎？你會出局，今天直接進入黑夜。`)) emit('act', { type: 'explode', target: sel });
+        break;
+      case 'rules': openRules(); break;
+      case 'closeRules': $('#rulesPage').classList.add('hidden'); break;
       case 'endSpeech': emit('act', { type: 'endSpeech' }); break;
       case 'vote': emit('act', { type: 'vote', target: sel }); break;
       case 'abstain': emit('act', { type: 'vote', target: null }); break;
     }
   });
+
+  function openRules() {
+    $('#rulesBody').innerHTML = rulesHtml(S?.setupText);
+    $('#rulesPage').classList.remove('hidden');
+    $('#rulesPage').scrollTop = 0;
+  }
 
   function confirmLeave() {
     if (!S || S.phase === 'lobby' || S.phase === 'ended') return true;
