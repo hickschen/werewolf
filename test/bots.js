@@ -6,7 +6,7 @@ const GAMES = Number(process.env.GAMES || 5);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const errors = [];
-const stats = { guard: 0, explode: 0, shoot: 0, grave: 0, guardBlock: 0 };
+const stats = { duel: 0, guard: 0, explode: 0, shoot: 0, grave: 0, guardBlock: 0 };
 const WOLF = ['werewolf', 'wolfKing', 'whiteWolfKing'];
 const isW = (r) => WOLF.includes(r);
 const results = [];
@@ -18,7 +18,7 @@ function bot(name) {
   s.on('err', (e) => errors.push(name + ': ' + e));
   s.on('joined', (j) => { b.join = j; });
   s.on('connect', () => { if (b.join) s.emit('resume', b.join, (r) => { if (!r.ok) errors.push('resume failed ' + r.error); }); });
-  b.emit = (ev, d) => new Promise((r) => s.emit(ev, d || {}, (res) => { if (res && !res.ok && !/今晚已經|現在不|不能連續|只有白狼王|只能在白天/.test(res.error)) errors.push(`${name} ${ev} ${JSON.stringify(d)}: ${res.error}`); r(res); }));
+  b.emit = (ev, d) => new Promise((r) => s.emit(ev, d || {}, (res) => { if (res && !res.ok && !/今晚已經|現在不|不能連續|只有白狼王|只能在白天|只有騎士|整局只能|請選擇一位存活/.test(res.error)) errors.push(`${name} ${ev} ${JSON.stringify(d)}: ${res.error}`); r(res); }));
   return b;
 }
 
@@ -27,7 +27,7 @@ function check(b, st) {
   const me = st.players.find((p) => p.id === st.you);
   for (const p of st.players) {
     if (p.id === st.you || !p.role) continue;
-    const ok = (isW(me.role) && isW(p.role)) || ['hunter', 'wolfKing', 'whiteWolfKing'].includes(p.role);
+    const ok = (isW(me.role) && isW(p.role)) || ['hunter', 'wolfKing', 'whiteWolfKing', 'knight'].includes(p.role);
     if (!ok) errors.push(`LEAK: ${b.name}(${me.role}) sees ${p.name}=${p.role}`);
   }
   for (const m of st.chat) {
@@ -77,6 +77,7 @@ async function act(b) {
     }
     b.emit('act', { type: 'guard', target: pick(opts).id }); stats.guard++;
   }
+  if (st.canDuel && Math.random() < 0.3) { stats.duel++; await b.emit('act', { type: 'duel', target: pick(others).id }); return; }
   if (st.canExplode && st.step === 'discuss' && Math.random() < 0.25) { stats.explode++; await b.emit('act', { type: 'explode', target: pick(others).id }); return; }
   if ((st.step === 'discuss' || st.step === 'lastwords') && st.speaker === st.you) b.emit('act', { type: 'endSpeech' });
   if (st.step === 'vote') b.emit('act', { type: 'vote', target: Math.random() < 0.85 ? pick(alive).id : null });
@@ -93,7 +94,7 @@ async function act(b) {
   await sleep(200);
   if (process.env.CUSTOM) {
     await host.emit('settings', { autoSetup: false });
-    await host.emit('settings', { wolves: 3, wolfKing: true, whiteWolfKing: true, seer: true, witch: true, hunter: true, guard: true, gravekeeper: true });
+    await host.emit('settings', { wolves: 3, wolfKing: true, whiteWolfKing: true, seer: true, witch: true, hunter: true, guard: true, gravekeeper: true, knight: true });
     await sleep(100);
     console.log('setup', JSON.stringify(host.state.setup));
   }
@@ -104,7 +105,7 @@ async function act(b) {
     setTimeout(() => { const b = bots[3]; b.s.disconnect(); setTimeout(() => b.s.connect(), 300); }, 400);
     while (host.state.phase !== 'ended') { await sleep(50); if (Date.now() - t0 > 60000) { errors.push('TIMEOUT game ' + g + ' step ' + host.state.step); break; } }
     await sleep(100);
-    const roles = host.state.players.map((p) => `${p.seat}${{werewolf:'狼',wolfKing:'狼王',whiteWolfKing:'白狼',villager:'民',seer:'預',witch:'巫',hunter:'獵',guard:'守',gravekeeper:'墓'}[p.role]}${p.alive ? '' : '†'}`).join(' ');
+    const roles = host.state.players.map((p) => `${p.seat}${{werewolf:'狼',wolfKing:'狼王',whiteWolfKing:'白狼',villager:'民',seer:'預',witch:'巫',hunter:'獵',guard:'守',gravekeeper:'墓',knight:'騎'}[p.role]}${p.alive ? '' : '†'}`).join(' ');
     results.push(`game ${g + 1}: ${host.state.winner} wins in ${host.state.nightNo} nights (${((Date.now() - t0) / 1000).toFixed(1)}s) ${roles}`);
     // 最後的紀錄
     if (g === 0 && process.env.SHOWLOG) console.log(host.state.log.map((l) => '   ' + l.text).join('\n'));

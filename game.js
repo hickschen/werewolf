@@ -14,8 +14,9 @@ const ROLES = {
   hunter: { name: '獵人', team: 'good', kind: 'god' },
   guard: { name: '守衛', team: 'good', kind: 'god' },
   gravekeeper: { name: '守墓人', team: 'good', kind: 'god' },
+  knight: { name: '騎士', team: 'good', kind: 'god' },
 };
-const GODS = ['seer', 'witch', 'hunter', 'guard', 'gravekeeper'];
+const GODS = ['seer', 'witch', 'hunter', 'guard', 'gravekeeper', 'knight'];
 const SPECIAL_WOLVES = ['wolfKing', 'whiteWolfKing'];
 const SHOOTERS = ['hunter', 'wolfKing']; // 死亡時可以開槍（被毒死除外）
 
@@ -36,6 +37,7 @@ function defaultSetup(n) {
     hunter: n >= 7,
     guard: n >= 10,
     gravekeeper: n >= 13,
+    knight: n >= 15,
   };
 }
 
@@ -87,7 +89,8 @@ class Room {
     this.speakOrder = [];
     this.votes = {};
     this.lastVote = null;
-    this.exploded = null; // 白狼王自爆 {by, target}
+    this.exploded = null; // 白天提前結束（白狼王自爆或騎士決鬥成功）{by, target, cause}
+    this.knightUsed = false;
     this.winner = null;
     this.revealed = {}; // 公開翻牌的身分
     this.lastNightDeaths = [];
@@ -380,12 +383,12 @@ class Room {
 
   // 白狼王自爆後：直接進入黑夜
   async afterExplode(gid) {
-    const { target } = this.exploded;
+    const { target, cause } = this.exploded;
     this.speaker = null;
     this.speakOrder = [];
     await this.runStep('announce', 6);
     if (this.stale(gid) || this.checkWin()) return;
-    if (target) await this.deathSkills([{ id: target, cause: 'whiteWolf' }], gid);
+    if (target) await this.deathSkills([{ id: target, cause }], gid);
   }
 
   // 處理死亡技能（獵人、狼王開槍），可以連鎖。回傳 false 表示遊戲結束
@@ -578,9 +581,29 @@ class Room {
         p.alive = false;
         target.alive = false;
         this.revealed[p.id] = 'whiteWolfKing';
-        this.exploded = { by: p.id, target: target.id };
+        this.exploded = { by: p.id, target: target.id, cause: 'whiteWolf' };
         this.sys(`💥 ${this.label(p)} 是白狼王，自爆並帶走了 ${this.label(target)}！今天直接進入黑夜`);
         return this.endStep();
+      }
+
+      case 'duel': {
+        if (p.role !== 'knight' || !p.alive) throw new Error('只有騎士可以決鬥');
+        if (this.knightUsed) throw new Error('決鬥整局只能用一次');
+        if (this.phase !== 'day' || this.step !== 'discuss' || this.exploded) throw new Error('只能在白天發言階段決鬥');
+        if (!target || !target.alive || target.id === p.id) throw new Error('請選擇要決鬥的玩家');
+        this.knightUsed = true;
+        this.revealed[p.id] = 'knight';
+        if (isWolf(target.role)) {
+          target.alive = false;
+          this.exploded = { by: p.id, target: target.id, cause: 'duel' };
+          this.sys(`⚔️ ${this.label(p)} 是騎士，決鬥 ${this.label(target)}——對方是狼人！${this.label(target)} 出局，今天直接進入黑夜`);
+          return this.endStep();
+        }
+        p.alive = false;
+        this.sys(`⚔️ ${this.label(p)} 是騎士，決鬥 ${this.label(target)}——對方是好人，騎士以死謝罪`);
+        if (this.checkWin()) return;
+        if (this.speaker === p.id) this.endStep();
+        return;
       }
 
       case 'endSpeech':
@@ -665,6 +688,7 @@ class Room {
       if (this.step === 'night_witch' && this.witchSave) s.witch.killed = this.wolfTarget;
       if (this.step === 'night_witch' && !this.witchSave && !this.witchTonight) s.witch.noInfo = true;
     }
+    if (me.role === 'knight') s.canDuel = me.alive && !this.knightUsed && this.phase === 'day' && this.step === 'discuss' && !this.exploded;
     if (me.role === 'whiteWolfKing') s.canExplode = me.alive && this.phase === 'day' && ['discuss', 'vote'].includes(this.step) && !this.exploded;
     if (this.step === 'shoot') s.shootTurn = this.shooterId === pid;
     return s;

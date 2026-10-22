@@ -14,17 +14,19 @@
     hunter: { name: '獵人', icon: '🏹', team: 'good', desc: '被狼人殺死或被投票出局時，可以開槍帶走一人（被毒死不能開槍）。' },
     guard: { name: '守衛', icon: '🛡️', team: 'good', desc: '每晚守護一人不被狼人殺害，可以守自己，但不能連續兩晚守同一人。' },
     gravekeeper: { name: '守墓人', icon: '🪦', team: 'good', desc: '每晚會得知前一天被投票放逐的人是好人還是狼人。' },
+    knight: { name: '騎士', icon: '⚔️', team: 'good', desc: '白天發言階段可以和一人決鬥（整局一次）：對方是狼人就出局並直接入夜；對方是好人則騎士以死謝罪。' },
   };
   const isWolfRole = (r) => ROLE[r]?.team === 'wolf';
-  const ROLE_ORDER = ['werewolf', 'wolfKing', 'whiteWolfKing', 'villager', 'seer', 'witch', 'hunter', 'guard', 'gravekeeper'];
+  const ROLE_ORDER = ['werewolf', 'wolfKing', 'whiteWolfKing', 'villager', 'seer', 'witch', 'hunter', 'guard', 'gravekeeper', 'knight'];
+  const GOD_KEYS = ['seer', 'witch', 'hunter', 'guard', 'gravekeeper', 'knight'];
 
   // 與伺服器相同的自動配置規則（只用來顯示規則頁的表格）
   function autoSetup(n) {
     const wolves = n <= 5 ? 1 : n <= 7 ? 2 : n <= 10 ? 3 : n <= 14 ? 4 : n <= 17 ? 5 : 6;
     const s = { wolfKing: n === 9 || n === 11 || n >= 14, whiteWolfKing: n === 10 || n >= 12, seer: true, witch: true,
-      hunter: n >= 7, guard: n >= 10, gravekeeper: n >= 13 };
+      hunter: n >= 7, guard: n >= 10, gravekeeper: n >= 13, knight: n >= 15 };
     const plain = wolves - (s.wolfKing ? 1 : 0) - (s.whiteWolfKing ? 1 : 0);
-    const gods = ['seer', 'witch', 'hunter', 'guard', 'gravekeeper'].filter((k) => s[k]);
+    const gods = GOD_KEYS.filter((k) => s[k]);
     const villagers = n - wolves - gods.length;
     return [s.wolfKing && '狼王', s.whiteWolfKing && '白狼王', plain > 0 && `狼人 ×${plain}`,
       ...gods.map((k) => ROLE[k].name), villagers > 0 && `村民 ×${villagers}`].filter(Boolean).join('、');
@@ -59,7 +61,7 @@
       <h3>勝負條件（屠邊）</h3>
       <ul>
         <li>🎉 <b>好人勝利</b>：所有狼人陣營（含狼王、白狼王）都出局。</li>
-        <li>🐺 <b>狼人勝利</b>：所有村民出局，<b>或</b>所有神職（預言家、女巫、獵人、守衛、守墓人）出局。</li>
+        <li>🐺 <b>狼人勝利</b>：所有村民出局，<b>或</b>所有神職（預言家、女巫、獵人、守衛、守墓人、騎士）出局。</li>
       </ul>
       <h3>角色</h3>
       <div class="rule-roles">${ROLE_ORDER.map(roleCard).join('')}</div>
@@ -71,6 +73,7 @@
         <li>獵人、狼王被毒死時不能開槍；開槍後會公開身分。被開槍帶走的獵人或狼王也可以再開槍。</li>
         <li>白狼王自爆後不投票，直接進入黑夜；自爆不算被放逐，守墓人不會得到資訊。</li>
         <li>預言家查驗狼王、白狼王，結果都是「狼人」。</li>
+        <li><b>騎士決鬥</b>只能在白天發言階段使用，整局一次。決鬥成功（對方是狼人）時當天不投票，直接進入黑夜；決鬥失敗則騎士出局，白天繼續。被決鬥的狼王可以開槍。</li>
         <li>第一晚死亡的玩家，以及白天被放逐的玩家，可以留遺言。</li>
         <li>出局的玩家不能再發言或投票，只能在「亡者頻道」聊天。</li>
       </ul>
@@ -328,7 +331,7 @@
     const sw = (k, on) => `<button class="switch ${on ? 'on' : ''}" data-action="setting" data-key="${k}" data-val="${!on}" aria-label="${k}"></button>`;
     const plainWolves = su.wolves - (su.wolfKing ? 1 : 0) - (su.whiteWolfKing ? 1 : 0);
     const setupLine = [su.wolfKing && '狼王', su.whiteWolfKing && '白狼王', plainWolves > 0 && `狼人 ×${plainWolves}`,
-      ...['seer', 'witch', 'hunter', 'guard', 'gravekeeper'].filter((k) => su[k]).map((k) => ROLE[k].name),
+      ...GOD_KEYS.filter((k) => su[k]).map((k) => ROLE[k].name),
       `村民 ×${Math.max(0, su.villagers)}`].filter(Boolean).join('、') + (su.villagers < 0 ? '（角色比玩家多，請減少角色）' : '');
     let settings = '';
     if (isHost()) {
@@ -338,7 +341,7 @@
         <div class="setrow"><span>狼人總數<small>（含狼王、白狼王）</small></span><div class="stepper">
           <button data-action="setting" data-key="wolves" data-val="${s.wolves - 1}">−</button><b>${s.wolves}</b>
           <button data-action="setting" data-key="wolves" data-val="${s.wolves + 1}">＋</button></div></div>
-        ${['wolfKing', 'whiteWolfKing', 'seer', 'witch', 'hunter', 'guard', 'gravekeeper'].map((k) =>
+        ${['wolfKing', 'whiteWolfKing', ...GOD_KEYS].map((k) =>
           `<div class="setrow"><span>${ROLE[k].icon} ${ROLE[k].name}</span>${sw(k, s[k])}</div>`).join('')}`}
         <div class="setrow"><span>每人發言時間</span>
           <select data-action="speakTime">${[30, 60, 90, 120, 180].map((v) => `<option value="${v}" ${v === s.speakTime ? 'selected' : ''}>${v} 秒</option>`).join('')}</select></div>
@@ -366,6 +369,7 @@
     if (S.step === 'night_witch' && m.alive && S.role === 'witch' && S.witch && !S.witch.done && S.witch.hasPoison) return { kind: 'poison', filter: aliveOther };
     if (S.step === 'shoot' && S.shootTurn) return { kind: 'shoot', filter: aliveOther };
     if (S.canExplode && S.step === 'discuss') return { kind: 'explode', filter: aliveOther };
+    if (S.canDuel) return { kind: 'duel', filter: aliveOther };
     if (S.step === 'vote' && m.alive) return { kind: 'vote', filter: (p) => p.alive };
     return null;
   }
@@ -491,6 +495,10 @@
       out.push(box('', '出局的玩家不能投票'));
     }
 
+    if (S.canDuel) {
+      out.push(box('⚔️ 騎士決鬥', `點選一位玩家後按「決鬥」。對方是狼人就出局並直接入夜；是好人則你出局。整局只能用一次。${sel ? `（目前選擇：${selName()}）` : ''}`,
+        `<button class="btn danger" data-action="duel" ${sel ? '' : 'disabled'}>翻牌決鬥 ${selName()}</button>`));
+    }
     if (S.canExplode) {
       out.push(box('💥 白狼王自爆', `點選一位玩家後按「自爆」，你會出局並帶走他，今天直接進入黑夜。${sel ? `（目前選擇：${selName()}）` : ''}`,
         `<button class="btn danger" data-action="explode" ${sel ? '' : 'disabled'}>自爆並帶走 ${selName()}</button>`));
@@ -604,6 +612,10 @@
       case 'explode':
         if (!sel) { toast('請先點選要帶走的玩家'); break; }
         if (confirm(`確定要自爆並帶走 ${label(P(sel))} 嗎？你會出局，今天直接進入黑夜。`)) emit('act', { type: 'explode', target: sel });
+        break;
+      case 'duel':
+        if (!sel) { toast('請先點選要決鬥的玩家'); break; }
+        if (confirm(`確定要翻牌決鬥 ${label(P(sel))} 嗎？整局只能用一次。`)) emit('act', { type: 'duel', target: sel });
         break;
       case 'rules': openRules(); break;
       case 'closeRules': $('#rulesPage').classList.add('hidden'); break;

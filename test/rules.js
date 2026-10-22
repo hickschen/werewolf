@@ -114,6 +114,48 @@ const until = async (room, step) => { for (let i = 0; i < 4000 && room.step !== 
     assert.ok(!r.log.some((l) => l.text.includes('開始投票')));
     console.log('✓ 白狼王自爆帶人、直接入夜、不算放逐');
   }
+  // 6. 騎士決鬥狼人：狼人出局、直接入夜；被決鬥的狼王可以開槍
+  {
+    const r = await setupRoom(['knight', 'wolfKing', 'werewolf', 'seer', 'villager', 'villager', 'villager', 'witch']);
+    await until(r, 'night_act');
+    const k = P(r, 'knight'), wk = P(r, 'wolfKing'), v = r.players[4];
+    assert.throws(() => r.act(k.id, { type: 'duel', target: wk.id }), /白天/);
+    r.act(wk.id, { type: 'wolfVote', target: null });
+    r.act(P(r, 'werewolf').id, { type: 'wolfVote', target: null });
+    r.act(P(r, 'seer').id, { type: 'seerCheck', target: k.id });
+    assert.strictEqual(r.seerResults[0].wolf, false);
+    await until(r, 'night_witch');
+    r.act(P(r, 'witch').id, { type: 'witch', skip: true });
+    await until(r, 'discuss');
+    assert.strictEqual(r.stateFor(k.id).canDuel, true);
+    assert.strictEqual(r.stateFor(v.id).canDuel, undefined);
+    r.act(k.id, { type: 'duel', target: wk.id });
+    assert.ok(!wk.alive && k.alive && r.revealed[k.id] === 'knight');
+    await until(r, 'shoot');
+    assert.strictEqual(r.shooterId, wk.id);
+    r.act(wk.id, { type: 'shoot', target: v.id });
+    await until(r, 'night_act');
+    assert.ok(!v.alive);
+    assert.ok(!r.log.some((l) => l.text.includes('開始投票')));
+    console.log('✓ 騎士決鬥狼王成功：狼王出局可開槍、直接入夜');
+  }
+  // 7. 騎士決鬥好人：騎士出局、白天繼續投票；整局只能一次
+  {
+    const r = await setupRoom(['knight', 'werewolf', 'werewolf', 'seer', 'villager', 'villager', 'villager', 'witch', 'villager']);
+    await until(r, 'night_act');
+    const k = P(r, 'knight'), v = r.players[4];
+    r.players.filter((p) => p.role === 'werewolf').forEach((w) => r.act(w.id, { type: 'wolfVote', target: null }));
+    r.act(P(r, 'seer').id, { type: 'seerCheck', target: v.id });
+    await until(r, 'night_witch');
+    r.act(P(r, 'witch').id, { type: 'witch', skip: true });
+    await until(r, 'discuss');
+    r.act(k.id, { type: 'duel', target: v.id });
+    assert.ok(!k.alive && v.alive);
+    assert.throws(() => r.act(k.id, { type: 'duel', target: v.id }), /騎士|一次/);
+    while (r.step === 'discuss') { r.act(r.speaker, { type: 'endSpeech' }); await sleep(2); }
+    await until(r, 'vote');
+    console.log('✓ 騎士決鬥好人失敗：騎士出局、白天繼續投票');
+  }
   console.log('ALL RULE TESTS PASSED');
   process.exit(0);
 })().catch((e) => { console.error('FAIL', e.message); process.exit(1); });
