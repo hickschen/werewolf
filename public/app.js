@@ -600,8 +600,10 @@
     }
   });
 
+  let gameVersion = '';
+  fetch('/api/version').then((r) => r.json()).then((j) => (gameVersion = j.version)).catch(() => {});
   function openRules() {
-    $('#rulesBody').innerHTML = rulesHtml(S?.setupText);
+    $('#rulesBody').innerHTML = rulesHtml(S?.setupText) + (gameVersion ? `<p class="setup-line" style="text-align:center;margin-top:24px">版本 ${esc(gameVersion)}</p>` : '');
     $('#rulesPage').classList.remove('hidden');
     $('#rulesPage').scrollTop = 0;
   }

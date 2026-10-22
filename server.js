@@ -38,6 +38,14 @@ app.get('/api/public-url', async (req, res) => {
   }
   res.json({ url: publicUrl.url });
 });
+// 給自動更新用：有人正在遊戲中（或最近 30 分鐘內有動靜的房間）就算忙碌
+app.get('/api/busy', (req, res) => {
+  const now = Date.now();
+  const busy = [...rooms.values()].some((r) =>
+    r.players.some((p) => p.connected) && (!['lobby', 'ended'].includes(r.phase) || now - r.lastActive < 30 * 60 * 1000));
+  res.json({ busy });
+});
+app.get('/api/version', (req, res) => res.json({ version: process.env.GAME_VERSION || 'dev' }));
 app.get('/health', (req, res) => res.json({ ok: true, rooms: rooms.size }));
 
 const rooms = new Map(); // code -> Room
