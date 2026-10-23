@@ -253,3 +253,17 @@ select { background: var(--card-solid); border: 1px solid var(--line); border-ra
 .sb-chip b { font-weight: 700; margin-left: 1px; }
 .sb-chip:active { transform: scale(0.96); }
 .toast.info { width: min(420px, calc(100% - 32px)); text-align: left; line-height: 1.6; }
+
+/* 語音 */
+.voice-bar:empty { display: none; }
+.vb-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 14px; border-radius: var(--radius);
+  background: var(--card); border: 1px solid var(--line); }
+.vb-row.live { border-color: color-mix(in srgb, var(--good) 55%, transparent); }
+.vb-icon { font-size: 20px; }
+.vb-text { flex: 1; min-width: 0; font-size: 14px; }
+.vb-text small { display: block; color: var(--muted); font-size: 12px; }
+.vb-row .btn { text-decoration: none; }
+.p.talking { border-color: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 45%, transparent), 0 0 18px color-mix(in srgb, var(--good) 40%, transparent); }
+.p.talking .seat { animation: talkpulse 0.6s ease-in-out infinite alternate; }
+@keyframes talkpulse { from { transform: scale(1); } to { transform: scale(1.08); } }
+.vb-btns { display: flex; gap: 6px; margin-left: auto; }

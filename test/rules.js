@@ -197,6 +197,33 @@ const until = async (room, step) => { for (let i = 0; i < 4000 && room.step !== 
     assert.throws(() => r.say(notSp.id, '投票時說話'), /投票中/);
     console.log('✓ 輪流發言時只有發言者能說話、遺言可說、投票時安靜、自由聊天開關有效');
   }
+  // 10. 語音權限：狼人夜晚只對狼隊友；出局者白天只能聽；留遺言的死者可以說
+  {
+    const r = await setupRoom(['werewolf', 'werewolf', 'seer', 'villager', 'villager', 'villager', 'witch', 'villager']);
+    r.players.forEach((p) => (p.voiceOn = true));
+    await until(r, 'night_act');
+    const [w1, w2] = r.players.filter((p) => p.role === 'werewolf');
+    const v = r.players[3];
+    let vw = r.voiceFor(w1), vv = r.voiceFor(v);
+    assert.deepStrictEqual(vw.talkTo, [w2.id]);
+    assert.strictEqual(vv.mode, null);
+    assert.deepStrictEqual(vv.hearFrom, []);
+    [w1, w2].forEach((w) => r.act(w.id, { type: 'wolfVote', target: v.id }));
+    r.act(P(r, 'seer').id, { type: 'seerCheck', target: w1.id });
+    await until(r, 'night_witch');
+    r.act(P(r, 'witch').id, { type: 'witch', skip: true });
+    await until(r, 'lastwords');
+    vv = r.voiceFor(v);
+    assert.strictEqual(vv.mode, 'day', '留遺言的死者可以說話');
+    assert.strictEqual(vv.talkTo.length, 7);
+    r.act(v.id, { type: 'endSpeech' });
+    await until(r, 'discuss');
+    vv = r.voiceFor(v);
+    assert.strictEqual(vv.mode, null, '出局者白天不能說話');
+    assert.strictEqual(vv.hearFrom.length, 7, '出局者聽得到存活玩家');
+    assert.ok(!r.voiceFor(w1).hearFrom.includes(v.id));
+    console.log('✓ 語音權限：狼隊夜聊、出局者只能聽、遺言可說');
+  }
   console.log('ALL RULE TESTS PASSED');
   process.exit(0);
 })().catch((e) => { console.error('FAIL', e.message); process.exit(1); });

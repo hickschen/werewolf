@@ -91,6 +91,18 @@ app.post('/admin/api/check', localOnly, express.json(), (req, res) => {
 const startedAt = Date.now();
 
 app.get('/api/version', (req, res) => res.json({ version: process.env.GAME_VERSION || 'dev' }));
+// 語音連線用的 ICE 伺服器（STUN 免費；如需 TURN 可用環境變數設定）
+app.get('/api/ice', (req, res) => {
+  const iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
+  if (process.env.TURN_URLS) {
+    iceServers.push({
+      urls: process.env.TURN_URLS.split(',').map((x) => x.trim()),
+      username: process.env.TURN_USERNAME || undefined,
+      credential: process.env.TURN_CREDENTIAL || undefined,
+    });
+  }
+  res.json({ iceServers });
+});
 app.get('/health', (req, res) => res.json({ ok: true, rooms: rooms.size }));
 
 const rooms = new Map(); // code -> Room
@@ -243,6 +255,25 @@ io.on('connection', (socket) => {
     room.act(pid, a);
     broadcast(room);
   }));
+
+  // ---------- 語音 ----------
+  socket.on('voice', handle(({ on }) => {
+    const { room, pid } = ctx();
+    room.get(pid).voiceOn = !!on;
+    broadcast(room);
+  }));
+
+  // WebRTC 訊號轉送：只在同一個房間、都已加入語音的玩家之間轉送
+  socket.on('rtc', ({ to, data } = {}) => {
+    const info = sockets.get(socket.id);
+    const room = info && rooms.get(info.code);
+    const from = room && room.get(info.pid);
+    const target = room && room.get(to);
+    if (!from?.voiceOn || !target?.voiceOn || !data) return;
+    for (const [sid, i] of sockets) {
+      if (i.pid === to && i.code === room.code) io.sockets.sockets.get(sid)?.emit('rtc', { from: from.id, data });
+    }
+  });
 
   socket.on('disconnect', () => {
     const info = sockets.get(socket.id);

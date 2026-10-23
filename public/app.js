@@ -76,6 +76,7 @@
         <li><b>騎士決鬥</b>只能在白天發言階段使用，整局一次。決鬥成功（對方是狼人）時當天不投票，直接進入黑夜；決鬥失敗則騎士出局，白天繼續。被決鬥的狼王可以開槍。</li>
         <li>第一晚死亡的玩家，以及白天被放逐的玩家，可以留遺言。</li>
         <li>出局的玩家不能再發言或投票，只能在「亡者頻道」聊天。</li>
+        <li><b>語音</b>（需要 https 網址）：大廳和白天所有存活玩家都能說話；晚上只有狼人能說，而且只有狼隊友聽得到；出局的人只能聽，輪到留遺言時可以說話。</li>
       </ul>
       <h3>依人數自動配置</h3>
       <table class="rule-table"><tr><th>人數</th><th>配置</th></tr>
@@ -178,6 +179,7 @@
     history.replaceState(null, '', `?room=${code}`);
   });
   socket.on('kicked', (msg) => {
+    if (Voice.joined) Voice.leave();
     save('ww_code', null); save('ww_token', null);
     S = null;
     showHome();
@@ -190,7 +192,46 @@
     S = state;
     onStateChange(prev);
     render();
+    Voice.update(S);
   });
+
+  // ---------- 語音 ----------
+  Voice.init(socket, () => renderVoiceBar(), (set) => markSpeaking(set));
+
+  function markSpeaking(set) {
+    document.querySelectorAll('.p[data-pid]').forEach((el) => el.classList.toggle('talking', set.has(el.dataset.pid)));
+  }
+
+  function voiceStatus() {
+    const v = S.voice || {};
+    const m = me();
+    if (S.phase === 'lobby' || S.phase === 'ended') return ['🎙️', '大家都可以說話'];
+    if (S.phase === 'night') return v.mode === 'wolf' ? ['🐺', '狼隊語音：只有狼隊友聽得到你'] : ['🌙', '天黑了，麥克風已關閉'];
+    if (v.mode && !m.alive) return ['🎤', '留遺言中，大家都聽得到你'];
+    if (v.mode) return ['☀️', '白天：存活玩家都可以說話'];
+    return ['👻', '你已出局，只能聽'];
+  }
+
+  function renderVoiceBar() {
+    const el = $('#voiceBar');
+    if (!S) { el.innerHTML = ''; return; }
+    if (!Voice.joined) {
+      const insecure = !Voice.secure();
+      const alt = publicUrl && publicUrl !== location.origin ? `${publicUrl}/?room=${S.code}` : '';
+      el.innerHTML = `<div class="vb-row"><span class="vb-icon">🎧</span>
+        <span class="vb-text">${insecure ? '語音需要 https 網址才能使用' : '語音聊天（建議戴耳機）'}</span>
+        ${insecure ? (alt ? `<a class="btn small" href="${esc(alt)}">改用 https 網址</a>` : '') : '<button class="btn small primary" data-action="voiceJoin">加入語音</button>'}</div>`;
+      return;
+    }
+    const [icon, text] = voiceStatus();
+    const v = S.voice || {};
+    const talkable = !!v.mode && !!Voice.mic;
+    const listeners = (v.hearFrom || []).length;
+    el.innerHTML = `<div class="vb-row joined ${talkable && !Voice.muted ? 'live' : ''}"><span class="vb-icon">${icon}</span>
+      <span class="vb-text">${esc(text)}${Voice.micError ? '（沒有麥克風權限，只能聽）' : ''}<small>語音中 ${(v.members || []).length} 人</small></span>
+      <span class="vb-btns">${talkable ? `<button class="btn small ${Voice.muted ? 'danger' : ''}" data-action="voiceMute">${Voice.muted ? '🔇 已靜音' : '🎙️ 靜音'}</button>` : ''}
+      <button class="btn small" data-action="voiceLeave">離開</button></span></div>`;
+  }
 
   function showHome() {
     $('#home').classList.remove('hidden');
@@ -233,6 +274,7 @@
     renderPhase();
     renderBanner();
     renderSetupBar();
+    renderVoiceBar();
     renderMyRole();
     renderLobby();
     renderPlayers();
@@ -414,6 +456,7 @@
       if (p.id === S.hostId && S.phase === 'lobby') tags.push('<span class="tag host">房主</span>');
       if (p.id === S.you) tags.push('<span class="tag">你</span>');
       if (p.bot) tags.push('<span class="tag">🤖 電腦</span>');
+      if (p.voice) tags.push('<span class="tag">🎧</span>');
       if (!p.connected) tags.push('<span class="tag off">離線</span>');
       if (p.role && (p.id !== S.you || S.phase === 'ended')) tags.push(`<span class="tag ${ROLE[p.role].team === 'wolf' ? 'wolf' : 'good'}">${ROLE[p.role].name}</span>`);
       if (p.id in seerMap && S.phase !== 'ended') tags.push(`<span class="tag ${seerMap[p.id] ? 'wolf' : 'good'}">${seerMap[p.id] ? '查殺' : '金水'}</span>`);
@@ -425,7 +468,7 @@
       const kick = S.phase === 'lobby' && isHost() && p.id !== S.you ? `<button class="kick" data-action="kick" data-id="${p.id}" title="請出房間">✕</button>` : '';
       const picks = wolfPicks[p.id] ? `<span class="picks">🐺${wolfPicks[p.id].join(',')}</span>` : '';
       const badge = tally && tally[p.id] ? `<span class="votes-badge">${tally[p.id]} 票</span>` : '';
-      return `<div class="${cls}" ${can ? `data-action="pick" data-id="${p.id}"` : ''}>
+      return `<div class="${cls}${Voice.speaking.has(p.id) ? ' talking' : ''}" data-pid="${p.id}" ${can ? `data-action="pick" data-id="${p.id}"` : ''}>
         ${picks}${badge}${kick}
         <div class="seat">${p.seat}</div>
         <div class="name">${esc(p.name)}</div>
@@ -592,6 +635,7 @@
       }
       case 'leave':
         if (!confirmLeave()) break;
+        if (Voice.joined) Voice.leave();
         await emit('leave');
         save('ww_code', null); save('ww_token', null);
         S = null;
@@ -652,6 +696,18 @@
         if (r) showRoleInfo(r);
         break;
       }
+      case 'voiceJoin':
+        try {
+          t.disabled = true;
+          await Voice.join();
+          toast(Voice.micError ? '沒有取得麥克風權限，你只能聽' : '已加入語音');
+        } catch (e) {
+          toast(e.message === 'insecure' ? '語音需要 https 網址，請改用外網網址' : '這個瀏覽器不支援語音');
+          renderVoiceBar();
+        }
+        break;
+      case 'voiceMute': Voice.toggleMute(); break;
+      case 'voiceLeave': Voice.leave(); break;
       case 'rules': openRules(); break;
       case 'closeRules': $('#rulesPage').classList.add('hidden'); break;
       case 'endSpeech': emit('act', { type: 'endSpeech' }); break;

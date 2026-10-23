@@ -132,6 +132,7 @@ class Room {
     const p = this.get(pid);
     if (!p) return;
     p.connected = on;
+    if (!on) p.voiceOn = false;
     if (!on && this.hostId === pid) {
       const next = this.players.find((q) => q.connected && !q.bot);
       if (next) this.hostId = next.id;
@@ -188,6 +189,39 @@ class Room {
     if (!p.alive) return 'dead';
     if (this.phase === 'night') return isWolf(p.role) ? 'wolf' : null;
     return this.settings.freeChat ? 'all' : null;
+  }
+
+  // ---------- 語音權限 ----------
+  // 誰在哪個「語音群組」說話：all（大廳）、day（白天）、wolf（晚上狼隊）
+  voiceTalkGroup(p) {
+    if (p.bot) return null;
+    if (this.phase === 'lobby' || this.phase === 'ended') return 'all';
+    if (this.phase === 'night') return p.alive && isWolf(p.role) ? 'wolf' : null;
+    if (p.alive) return 'day';
+    if (this.step === 'lastwords' && this.speaker === p.id) return 'day';
+    return null;
+  }
+
+  voiceHearGroups(p) {
+    if (p.bot) return [];
+    if (this.phase === 'lobby' || this.phase === 'ended') return ['all'];
+    if (this.phase === 'night') return p.alive && isWolf(p.role) ? ['wolf'] : [];
+    return ['day'];
+  }
+
+  voiceFor(me) {
+    const members = this.players.filter((q) => q.voiceOn && q.connected && !q.bot);
+    const myTalk = this.voiceTalkGroup(me);
+    const myHear = this.voiceHearGroups(me);
+    const talkTo = [];
+    const hearFrom = [];
+    for (const q of members) {
+      if (q.id === me.id) continue;
+      if (myTalk && this.voiceHearGroups(q).includes(myTalk)) talkTo.push(q.id);
+      const g = this.voiceTalkGroup(q);
+      if (g && myHear.includes(g)) hearFrom.push(q.id);
+    }
+    return { mode: myTalk, members: members.map((q) => q.id), talkTo, hearFrom };
   }
 
   chatBlockedReason() {
@@ -793,7 +827,7 @@ class Room {
       let role = null;
       if (ended || q.id === me.id || (meWolf && isWolf(q.role))) role = q.role;
       else if (this.revealed[q.id]) role = this.revealed[q.id];
-      return { id: q.id, name: q.name, seat: q.seat, alive: q.alive, connected: q.connected, bot: !!q.bot, role };
+      return { id: q.id, name: q.name, seat: q.seat, alive: q.alive, connected: q.connected, bot: !!q.bot, voice: !!q.voiceOn, role };
     });
 
     const s = {
@@ -817,6 +851,7 @@ class Room {
       chat: this.chat.filter((m) => this.canSee(me, m)).slice(-100),
       chatChannel: this.chatChannel(me),
       chatBlocked: this.chatChannel(me) ? null : this.chatBlockedReason(),
+      voice: this.voiceFor(me),
       winner: this.winner,
       lastVote: this.lastVote,
       minPlayers: MIN_PLAYERS,
