@@ -277,3 +277,42 @@ select { background: var(--card-solid); border: 1px solid var(--line); border-ra
 .kick-inline { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 0 0 2px; }
 .msg.ch-spec { color: var(--muted); }
 .join-row .btn { padding-left: 12px; padding-right: 12px; }
+
+/* ---------- 開局洗牌發牌動畫 ---------- */
+.deal { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: radial-gradient(800px 600px at 50% 40%, #282060, #08061a); opacity: 0; transition: opacity .3s; color: #ece8ff; }
+.deal.show { opacity: 1; }
+.deal-box { width: min(560px, 100%); text-align: center; }
+.deal-title { font-family: var(--serif); font-size: 24px; font-weight: 900; margin-bottom: 6px; letter-spacing: 2px; }
+.deal-stage { position: relative; width: min(100%, 62vh); aspect-ratio: 1; margin: 0 auto; perspective: 900px; }
+.deal-felt { position: absolute; inset: 9%; border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, #2b2560, #171338 70%); box-shadow: inset 0 0 0 2px rgba(242, 199, 110, .35), inset 0 0 60px rgba(0, 0, 0, .6), 0 20px 60px rgba(0, 0, 0, .5); }
+.deal-seat { position: absolute; left: 50%; top: 50%; font-size: 11px; color: #a39dc8; white-space: nowrap; pointer-events: none; transition: opacity .3s; }
+.deal-seat b { display: inline-block; min-width: 16px; margin-right: 2px; color: #ece8ff; }
+.deal-seat.me, .deal-seat.me b { color: #f2c76e; font-weight: 700; }
+.deal-hint { min-height: 44px; margin: 10px auto 12px; max-width: 460px; color: #cfc9ee; font-size: 15px; line-height: 1.6; }
+.deal-btns { display: flex; justify-content: center; gap: 10px; }
+.deal .btn { color: #ece8ff; border-color: rgba(255,255,255,.2); }
+.deal .btn.primary { color: #2a1f05; }
+
+.dk { position: absolute; left: 50%; top: 50%; width: var(--cw, 48px); height: calc(var(--cw, 48px) * 1.4); perspective: 600px; }
+.dk-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .75s cubic-bezier(.3,.7,.3,1); }
+.dk.flipped .dk-inner { transform: rotateY(180deg); }
+.dk-face { position: absolute; inset: 0; border-radius: calc(var(--cw, 48px) * .12); backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+.dk-back { background:
+    repeating-linear-gradient(45deg, rgba(242,199,110,.12) 0 3px, transparent 3px 7px),
+    linear-gradient(160deg, #3b2f7a, #1d1745);
+  border: 2px solid rgba(242, 199, 110, .7); box-shadow: 0 3px 8px rgba(0,0,0,.45); }
+.dk-back span { font-size: calc(var(--cw, 48px) * .42); filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.dk-front { transform: rotateY(180deg); background: linear-gradient(170deg, #fffaf0, #efe2c4); color: #2b2013; border: 2px solid #1f8a5b; }
+.dk.wolf .dk-front { border-color: #c92a3a; background: linear-gradient(170deg, #fff1f1, #f1cfcf); }
+.dk-icon { font-size: calc(var(--cw, 48px) * .46); line-height: 1.1; }
+.dk-name { font-family: var(--serif); font-weight: 900; font-size: calc(var(--cw, 48px) * .2); margin-top: 2px; white-space: nowrap; }
+.dk.mine .dk-back { border-color: #f2c76e; box-shadow: 0 0 0 2px #f2c76e, 0 0 16px rgba(242,199,110,.8); }
+.dk.deck { z-index: 3; }
+.deal-stage.focus .dk:not(.flipcard), .deal-stage.focus .deal-seat { opacity: .25; }
+.dk.flipcard { transition: filter .3s; }
+.dk.flipcard:not(.flipped) .dk-inner { animation: dkpulse 1.2s ease-in-out infinite alternate; }
+@keyframes dkpulse { from { filter: brightness(1); } to { filter: brightness(1.25) drop-shadow(0 0 6px rgba(242,199,110,.9)); } }
+@media (prefers-reduced-motion: reduce) { .dk-inner { transition: none; } .dk.flipcard .dk-inner { animation: none; } }

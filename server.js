@@ -18,7 +18,7 @@ const VERSION = process.env.GAME_VERSION || String(Date.now());
 const fs = require('fs');
 function sendIndex(req, res) {
   let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
-  html = html.replace(/(href|src)="(style\.css|voice\.js|app\.js)"/g, `$1="$2?v=${VERSION}"`)
+  html = html.replace(/(href|src)="(style\.css|voice\.js|deal\.js|app\.js)"/g, `$1="$2?v=${VERSION}"`)
     .replace('</head>', `  <meta name="game-version" content="${VERSION}" />\n</head>`);
   res.set('Cache-Control', 'no-store').type('html').send(html);
 }

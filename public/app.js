@@ -254,7 +254,19 @@
     sel = null;
     const m = me();
     if (prev && prev.step !== S.step && ['reveal', 'night_act', 'announce', 'vote'].includes(S.step)) window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (S.step === 'reveal') { roleCovered = false; speak('遊戲開始，請查看你的身分'); }
+    if (S.step === 'reveal') {
+      roleCovered = false;
+      speak('遊戲開始，正在洗牌發牌');
+      // 剛開局（或重新連線時還剩不少時間）才播放洗牌發牌動畫
+      const left = (S.deadline || 0) - (Date.now() + clockOffset);
+      if (window.DealAnim && left > 6000) {
+        const r = S.role && ROLE[S.role];
+        const mates = isWolfRole(S.role) ? S.players.filter((p) => isWolfRole(p.role) && p.id !== S.you)
+          .map((p) => label(p) + (p.role !== 'werewolf' ? `（${ROLE[p.role].name}）` : '')) : [];
+        window.DealAnim.play({ players: S.players, you: S.you, spectator: !!S.spectator, role: r, mates, sound });
+      }
+    }
+    if (S.step !== 'reveal' && window.DealAnim?.isOpen()) window.DealAnim.close(false);
     if (S.step === 'night_act' && prev?.step !== 'night_act') speak('天黑請閉眼');
     if (S.step === 'announce' && prev?.phase === 'night') speak('天亮了');
     if (S.step === 'vote') speak('請開始投票');

@@ -497,7 +497,7 @@ class Room {
   }
 
   async loop(gid) {
-    await this.runStep('reveal', 10); // 看身分
+    await this.runStep('reveal', 16); // 洗牌、發牌、看身分
     if (this.stale(gid)) return;
     while (true) {
       await this.night(gid);
