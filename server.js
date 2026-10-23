@@ -79,6 +79,7 @@ app.get('/admin/api/status', localOnly, (req, res) => {
       nightNo: r.nightNo,
       lastActive: r.humanSeen || r.lastActive,
       players: r.players.map((p) => ({ name: p.name, seat: p.seat, bot: !!p.bot, connected: p.connected, alive: p.alive, host: p.id === r.hostId })),
+      spectators: r.spectators.map((p) => ({ name: p.name, connected: p.connected, host: p.id === r.hostId })),
     })),
   });
 });
@@ -120,7 +121,7 @@ function broadcast(room) {
   for (const [sid, info] of sockets) {
     if (info.code !== room.code) continue;
     const s = io.sockets.sockets.get(sid);
-    if (s && room.get(info.pid)) s.emit('state', room.stateFor(info.pid));
+    if (s && room.member(info.pid)) s.emit('state', room.stateFor(info.pid));
   }
 }
 
@@ -151,7 +152,7 @@ io.on('connection', (socket) => {
   const ctx = () => {
     const info = sockets.get(socket.id);
     const room = info && rooms.get(info.code);
-    if (!room || !room.get(info.pid)) throw new Error('你不在房間裡');
+    if (!room || !room.member(info.pid)) throw new Error('你不在房間裡');
     room.humanSeen = Date.now();
     return { room, pid: info.pid };
   };
@@ -164,16 +165,24 @@ io.on('connection', (socket) => {
     bind(socket, room, p);
   }));
 
-  socket.on('join', handle(({ code, name }) => {
+  socket.on('join', handle(({ code, name, spectator }) => {
     const room = rooms.get(String(code || '').trim());
     if (!room) throw new Error('找不到這個房間');
-    const p = room.addPlayer(name);
+    // 選擇旁觀，或遊戲已經開始，就以旁觀者身分加入
+    const p = spectator || room.phase !== 'lobby' ? room.addSpectator(name) : room.addPlayer(name);
     bind(socket, room, p);
+    if (p.spectator && !spectator) socket.emit('err', '遊戲已經開始，你目前是旁觀者');
+  }));
+
+  socket.on('spectate', handle(({ on }) => {
+    const { room, pid } = ctx();
+    room.setSpectator(pid, !!on);
+    broadcast(room);
   }));
 
   socket.on('resume', handle(({ code, token }) => {
     const room = rooms.get(String(code || ''));
-    const p = room && room.players.find((q) => q.token === token);
+    const p = room && [...room.players, ...room.spectators].find((q) => q.token === token);
     if (!p) throw new Error('原本的房間已經不存在');
     bind(socket, room, p);
   }));
@@ -181,9 +190,9 @@ io.on('connection', (socket) => {
   socket.on('leave', handle(() => {
     const { room, pid } = ctx();
     sockets.delete(socket.id);
-    if (room.phase === 'lobby') room.removePlayer(pid);
+    if (room.phase === 'lobby' || room.spectator(pid)) room.removePlayer(pid);
     else room.setConnected(pid, false);
-    if (!room.players.length) rooms.delete(room.code);
+    if (!room.players.length && !room.spectators.length) rooms.delete(room.code);
     else broadcast(room);
   }));
 
@@ -259,7 +268,7 @@ io.on('connection', (socket) => {
   // ---------- 語音 ----------
   socket.on('voice', handle(({ on }) => {
     const { room, pid } = ctx();
-    room.get(pid).voiceOn = !!on;
+    room.member(pid).voiceOn = !!on;
     broadcast(room);
   }));
 
@@ -267,8 +276,8 @@ io.on('connection', (socket) => {
   socket.on('rtc', ({ to, data } = {}) => {
     const info = sockets.get(socket.id);
     const room = info && rooms.get(info.code);
-    const from = room && room.get(info.pid);
-    const target = room && room.get(to);
+    const from = room && room.member(info.pid);
+    const target = room && room.member(to);
     if (!from?.voiceOn || !target?.voiceOn || !data) return;
     for (const [sid, i] of sockets) {
       if (i.pid === to && i.code === room.code) io.sockets.sockets.get(sid)?.emit('rtc', { from: from.id, data });
@@ -290,7 +299,7 @@ io.on('connection', (socket) => {
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms) {
-    const anyone = room.players.some((p) => p.connected && !p.bot);
+    const anyone = room.humans().some((p) => p.connected);
     const seen = room.humanSeen || room.lastActive;
     if ((!anyone && now - seen > 30 * 60 * 1000) || now - seen > 6 * 3600 * 1000) {
       room.gameId++;

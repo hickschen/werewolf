@@ -145,7 +145,7 @@
   }
   function buzz() { try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch {} }
 
-  const me = () => S.players.find((p) => p.id === S.you);
+  const me = () => S.players.find((p) => p.id === S.you) || S.self;
   const P = (id) => S.players.find((p) => p.id === id);
   const label = (p) => (p ? `${p.seat} 號 ${p.name}` : '');
   const isHost = () => S.hostId === S.you;
@@ -207,6 +207,7 @@
     const m = me();
     if (S.phase === 'lobby' || S.phase === 'ended') return ['🎙️', '大家都可以說話'];
     if (S.phase === 'night') return v.mode === 'wolf' ? ['🐺', '狼隊語音：只有狼隊友聽得到你'] : ['🌙', '天黑了，麥克風已關閉'];
+    if (S.spectator) return ['👀', '旁觀中：只能聽白天的討論'];
     if (v.mode && !m.alive) return ['🎤', '留遺言中，大家都聽得到你'];
     if (v.mode) return ['☀️', '白天：存活玩家都可以說話'];
     return ['👻', '你已出局，只能聽'];
@@ -306,7 +307,7 @@
       h = '身分已發放'; p = '記住自己的身分，別讓別人看到喔';
     } else if (S.phase === 'night') {
       h = '🌙 天黑請閉眼';
-      p = m.alive ? '有技能的角色請行動，其他人請耐心等待' : '你已經出局，可以在亡者頻道聊天';
+      p = S.spectator ? '👀 旁觀中，玩家正在夜晚行動' : m.alive ? '有技能的角色請行動，其他人請耐心等待' : '你已經出局，可以在亡者頻道聊天';
     } else if (S.step === 'announce') {
       const last = S.log[S.log.length - 1];
       h = '☀️ 天亮了'; p = last ? last.text : '';
@@ -372,6 +373,12 @@
         <p>所有人的身分已公開</p></div>`;
       return;
     }
+    if (S.step === 'reveal' && S.spectator) {
+      el.innerHTML = `<div class="reveal-card"><div class="r-icon">👀</div><div class="r-name">旁觀中</div>
+        <p>身分已經發給玩家了${S.godView ? '，你可以在卡片上看到所有人的身分（上帝視角）' : ''}。</p>
+        <p class="setup-line">本局配置：${esc(S.setupText)}</p></div>`;
+      return;
+    }
     if (S.step === 'reveal') {
       const r = ROLE[S.role];
       let extra = '';
@@ -406,6 +413,7 @@
         ${['wolfKing', 'whiteWolfKing', ...GOD_KEYS].map((k) =>
           `<div class="setrow"><span>${ROLE[k].icon} ${ROLE[k].name}</span>${sw(k, s[k])}</div>`).join('')}`}
         <div class="setrow"><span>白天自由聊天<small>（關閉時只有輪到的人能打字）</small></span>${sw('freeChat', !!s.freeChat)}</div>
+        <div class="setrow"><span>旁觀者上帝視角<small>（可看到所有身分、狼隊與亡者頻道）</small></span>${sw('spectatorGodView', !!s.spectatorGodView)}</div>
         <div class="setrow"><span>每人發言時間</span>
           <select data-action="speakTime">${[30, 60, 90, 120, 180].map((v) => `<option value="${v}" ${v === s.speakTime ? 'selected' : ''}>${v} 秒</option>`).join('')}</select></div>
         <div class="setrow"><span class="setup-line">${esc(setupLine)}</span></div>
@@ -449,6 +457,10 @@
     const voteFor = {};
     if (S.step === 'vote_result' && S.lastVote) for (const [v, t] of Object.entries(S.lastVote.votes)) if (t) (voteFor[t] = voteFor[t] || []).push(P(v)?.seat);
 
+    const specs = S.spectators || [];
+    $('#specList').innerHTML = specs.length ? `<span class="sb-title">👀 旁觀者（${specs.length}）</span>` + specs.map((q) =>
+      `<span class="spec ${q.connected ? '' : 'off'}">${esc(q.name)}${q.id === S.you ? '（你）' : ''}${q.id === S.hostId ? ' 👑' : ''}${q.voice ? ' 🎧' : ''}${
+        S.phase === 'lobby' && isHost() && q.id !== S.you ? ` <button class="kick-inline" data-action="kick" data-id="${q.id}" title="請出房間">✕</button>` : ''}</span>`).join('') : '';
     $('#players').innerHTML = S.players.map((p) => {
       const can = mode && mode.filter(p);
       const cls = ['p', p.alive ? '' : 'dead', can ? 'pick' : '', sel === p.id ? 'sel' : '', S.speaker === p.id ? 'speaking' : '', p.id === S.you ? 'me' : ''].join(' ');
@@ -487,6 +499,9 @@
     const hostSkip = isHost() && S.phase !== 'lobby' && S.phase !== 'ended' && !['night_act', 'night_witch'].includes(S.step);
 
     if (S.phase === 'lobby') {
+      out.push(`<div class="btn-row">${S.spectator
+        ? `<button class="btn small good" data-action="spectate" data-on="0">🎮 加入遊戲</button><span class="setup-line" style="align-self:center">你目前是旁觀者</span>`
+        : `<button class="btn small" data-action="spectate" data-on="1">👀 改為旁觀</button>`}</div>`);
       if (isHost()) {
         out.push(`<div class="btn-row">
           <button class="btn primary big" data-action="start" ${S.players.length < S.minPlayers ? 'disabled' : ''}>開始遊戲（${S.players.length} 人）</button></div>
@@ -500,6 +515,10 @@
     } else if (S.phase === 'ended') {
       if (isHost()) out.push(`<button class="btn primary big" data-action="lobby">再來一局</button>`);
       else out.push(box('', '等待房主開始下一局…'));
+    } else if (S.spectator) {
+      out.push(box('👀 你正在旁觀', S.godView
+        ? '上帝視角已開啟：你看得到所有人的身分、狼隊頻道和亡者頻道。請不要在場外透露給玩家喔！'
+        : '你看得到公開的資訊，可以在「旁觀頻道」和其他旁觀者聊天，場上玩家看不到。'));
     } else if (S.step === 'night_act' && m.alive && isWolfRole(S.role)) {
       const myPick = S.wolfVotes?.[S.you];
       const status = myPick === undefined ? '尚未決定' : myPick === null ? '你選擇空刀' : `你選了 ${esc(label(P(myPick)))}`;
@@ -580,7 +599,7 @@
   function renderChat() {
     const list = $('#chatList');
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
-    const chName = { all: '', wolf: '狼', dead: '亡' };
+    const chName = { all: '', wolf: '狼', dead: '亡', spec: '觀' };
     list.innerHTML = S.chat.length
       ? S.chat.map((m) => `<div class="msg ch-${m.ch}">${chName[m.ch] ? `<span class="chn">${chName[m.ch]}</span>` : ''}<span class="who">${m.seat}號 ${esc(m.name)}</span>${esc(m.text)}</div>`).join('')
       : '<div class="empty">還沒有訊息</div>';
@@ -588,7 +607,7 @@
 
     const ch = S.chatChannel;
     const input = $('#chatInput');
-    const tag = { all: '全體', wolf: '狼隊頻道', dead: '亡者頻道' }[ch] || '';
+    const tag = { all: '全體', wolf: '狼隊頻道', dead: '亡者頻道', spec: '旁觀頻道' }[ch] || '';
     $('#chatCh').textContent = tag;
     input.disabled = !ch;
     input.placeholder = ch ? (ch === 'all' && S.speaker === S.you ? '輪到你發言，輸入訊息…' : '輸入訊息…') : (S.chatBlocked || '現在不能發言');
@@ -630,9 +649,10 @@
         const code = $('#codeInput').value.trim();
         if (!name) break;
         if (!/^\d{4}$/.test(code)) { toast('請輸入 4 位數房號'); break; }
-        emit('join', { code, name });
+        emit('join', { code, name, spectator: t.dataset.spectator === '1' });
         break;
       }
+      case 'spectate': emit('spectate', { on: t.dataset.on === '1' }); break;
       case 'leave':
         if (!confirmLeave()) break;
         if (Voice.joined) Voice.leave();

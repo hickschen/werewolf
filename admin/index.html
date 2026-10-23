@@ -141,9 +141,10 @@
       return `<div class="room">
         <div class="room-head"><span class="code">${esc(r.code)}</span>
           <span class="pill ${active ? 'warn' : 'ok'}">${esc(phaseText(r))}</span>
-          <span class="meta">真人 ${online}/${humans.length} 在線${bots ? ` · 電腦 ${bots}` : ''} · 最後活動 ${ago(r.lastActive, data.now)}</span></div>
+          <span class="meta">真人 ${online}/${humans.length} 在線${bots ? ` · 電腦 ${bots}` : ''}${(r.spectators || []).length ? ` · 旁觀 ${r.spectators.length}` : ''} · 最後活動 ${ago(r.lastActive, data.now)}</span></div>
         <div class="people">${r.players.map((p) => `<span class="person ${p.bot ? '' : p.connected ? 'on' : 'off'} ${p.alive || r.phase === 'lobby' ? '' : 'dead'}">
-          ${p.seat}. ${p.bot ? '🤖' : p.connected ? '🟢' : '⚪'} ${esc(p.name)}${p.host ? ' 👑' : ''}</span>`).join('')}</div>
+          ${p.seat}. ${p.bot ? '🤖' : p.connected ? '🟢' : '⚪'} ${esc(p.name)}${p.host ? ' 👑' : ''}</span>`).join('')}
+          ${(r.spectators || []).map((p) => `<span class="person ${p.connected ? 'on' : 'off'}">👀 ${esc(p.name)}${p.host ? ' 👑' : ''}</span>`).join('')}</div>
       </div>`;
     }).join('') : '<div class="empty">目前沒有任何房間</div>';
   }

@@ -267,3 +267,13 @@ select { background: var(--card-solid); border: 1px solid var(--line); border-ra
 .p.talking .seat { animation: talkpulse 0.6s ease-in-out infinite alternate; }
 @keyframes talkpulse { from { transform: scale(1); } to { transform: scale(1.08); } }
 .vb-btns { display: flex; gap: 6px; margin-left: auto; }
+
+/* 旁觀者 */
+.spec-list:empty { display: none; }
+.spec-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; padding: 10px 12px; border-radius: var(--radius);
+  background: var(--card); border: 1px dashed var(--line); }
+.spec { font-size: 13px; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--line); }
+.spec.off { color: var(--muted); }
+.kick-inline { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 0 0 2px; }
+.msg.ch-spec { color: var(--muted); }
+.join-row .btn { padding-left: 12px; padding-right: 12px; }

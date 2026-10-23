@@ -24,6 +24,7 @@ const isWolf = (role) => ROLES[role]?.team === 'wolf';
 
 const MIN_PLAYERS = 4;
 const MAX_PLAYERS = 20;
+const MAX_SPECTATORS = 30;
 
 // 依人數自動配置（4–20 人）
 function defaultSetup(n) {
@@ -58,6 +59,7 @@ class Room {
     this.code = code;
     this.notify = notify; // (room) => 推送最新狀態給所有人
     this.players = [];
+    this.spectators = []; // 旁觀者：不拿身分、不參與遊戲
     this.hostId = null;
     this.phase = 'lobby'; // lobby | night | day | ended
     this.step = null;
@@ -98,17 +100,58 @@ class Room {
 
   // ---------- 玩家管理 ----------
   get(pid) { return this.players.find((p) => p.id === pid); }
+  spectator(pid) { return this.spectators.find((p) => p.id === pid); }
+  member(pid) { return this.get(pid) || this.spectator(pid); }
+  humans() { return [...this.players.filter((p) => !p.bot), ...this.spectators]; }
   alive() { return this.players.filter((p) => p.alive); }
   aliveRole(role) { return this.players.filter((p) => p.alive && p.role === role); }
   aliveWolves() { return this.players.filter((p) => p.alive && isWolf(p.role)); }
   label(p) { return `${p.seat} 號 ${p.name}`; }
 
+  cleanName(name) {
+    const clean = String(name || '').trim().slice(0, 12);
+    if (!clean) throw new Error('請輸入暱稱');
+    if (this.players.some((p) => p.name === clean) || this.spectators.some((p) => p.name === clean)) throw new Error('這個暱稱已經有人用了');
+    return clean;
+  }
+
+  addSpectator(name) {
+    if (this.spectators.length >= MAX_SPECTATORS) throw new Error(`旁觀人數已滿（最多 ${MAX_SPECTATORS} 人）`);
+    const clean = this.cleanName(name);
+    const p = { id: id(), token: token(), name: clean, seat: 0, connected: true, alive: false, role: null, spectator: true };
+    this.spectators.push(p);
+    if (!this.hostId) this.hostId = p.id;
+    this.sys(`👀 ${clean} 進來旁觀`);
+    return p;
+  }
+
+  // 大廳中切換：玩家 ⇄ 旁觀者
+  setSpectator(pid, on) {
+    if (this.phase !== 'lobby') throw new Error('請等房主按「再來一局」回到大廳後再切換');
+    if (on) {
+      const p = this.get(pid);
+      if (!p) return;
+      this.players = this.players.filter((q) => q !== p);
+      Object.assign(p, { spectator: true, seat: 0, alive: false, role: null });
+      this.spectators.push(p);
+      this.reseat();
+      this.sys(`👀 ${p.name} 改為旁觀`);
+    } else {
+      const p = this.spectator(pid);
+      if (!p) return;
+      if (this.players.length >= MAX_PLAYERS) throw new Error(`玩家已滿（最多 ${MAX_PLAYERS} 人）`);
+      this.spectators = this.spectators.filter((q) => q !== p);
+      Object.assign(p, { spectator: false, alive: true, role: null });
+      this.players.push(p);
+      this.reseat();
+      this.sys(`${p.name} 加入遊戲`);
+    }
+  }
+
   addPlayer(name) {
     if (this.phase !== 'lobby') throw new Error('遊戲已經開始，無法加入');
     if (this.players.length >= MAX_PLAYERS) throw new Error(`房間已滿（最多 ${MAX_PLAYERS} 人）`);
-    const clean = String(name || '').trim().slice(0, 12);
-    if (!clean) throw new Error('請輸入暱稱');
-    if (this.players.some((p) => p.name === clean)) throw new Error('這個暱稱已經有人用了');
+    const clean = this.cleanName(name);
     const p = { id: id(), token: token(), name: clean, seat: 0, connected: true, alive: true, role: null };
     this.players.push(p);
     this.reseat();
@@ -118,26 +161,27 @@ class Room {
   }
 
   removePlayer(pid) {
-    const p = this.get(pid);
+    const p = this.member(pid);
     if (!p) return;
     this.players = this.players.filter((q) => q.id !== pid);
+    this.spectators = this.spectators.filter((q) => q.id !== pid);
     this.reseat();
-    if (this.hostId === pid) this.hostId = (this.players.find((q) => q.connected && !q.bot) || this.players.find((q) => !q.bot) || {}).id || null;
+    if (this.hostId === pid) this.hostId = (this.humans().find((q) => q.connected) || this.humans()[0] || {}).id || null;
     this.sys(`${p.name} 離開了房間`);
   }
 
   reseat() { this.players.forEach((p, i) => (p.seat = i + 1)); }
 
   setConnected(pid, on) {
-    const p = this.get(pid);
+    const p = this.member(pid);
     if (!p) return;
     p.connected = on;
     if (!on) p.voiceOn = false;
     if (!on && this.hostId === pid) {
-      const next = this.players.find((q) => q.connected && !q.bot);
+      const next = this.humans().find((q) => q.connected);
       if (next) this.hostId = next.id;
     }
-    if (on && !this.get(this.hostId)?.connected) this.hostId = pid;
+    if (on && !this.member(this.hostId)?.connected) this.hostId = pid;
   }
 
   setup() {
@@ -163,6 +207,7 @@ class Room {
     const specials = SPECIAL_WOLVES.filter((k) => s[k]).length;
     if (specials > s.wolves) s.wolves = specials;
     if ('freeChat' in patch) s.freeChat = !!patch.freeChat;
+    if ('spectatorGodView' in patch) s.spectatorGodView = !!patch.spectatorGodView;
     if ('speakTime' in patch) s.speakTime = Math.max(20, Math.min(300, Number(patch.speakTime) | 0));
   }
 
@@ -173,7 +218,7 @@ class Room {
   }
 
   say(pid, text) {
-    const p = this.get(pid);
+    const p = this.member(pid);
     text = String(text || '').trim().slice(0, 200);
     if (!p || !text) return;
     const ch = this.chatChannel(p);
@@ -184,6 +229,7 @@ class Room {
 
   chatChannel(p) {
     if (this.phase === 'lobby' || this.phase === 'ended') return 'all';
+    if (p.spectator) return 'spec';
     // 輪流發言／遺言：只有正在發言的人能在公開頻道說話（留遺言的死者也可以）
     if (this.phase === 'day' && ['discuss', 'lastwords'].includes(this.step) && this.speaker === p.id) return 'all';
     if (!p.alive) return 'dead';
@@ -196,6 +242,7 @@ class Room {
   voiceTalkGroup(p) {
     if (p.bot) return null;
     if (this.phase === 'lobby' || this.phase === 'ended') return 'all';
+    if (p.spectator) return null; // 旁觀者遊戲中只能聽
     if (this.phase === 'night') return p.alive && isWolf(p.role) ? 'wolf' : null;
     if (p.alive) return 'day';
     if (this.step === 'lastwords' && this.speaker === p.id) return 'day';
@@ -205,12 +252,13 @@ class Room {
   voiceHearGroups(p) {
     if (p.bot) return [];
     if (this.phase === 'lobby' || this.phase === 'ended') return ['all'];
+    if (p.spectator) return this.phase === 'day' ? ['day'] : [];
     if (this.phase === 'night') return p.alive && isWolf(p.role) ? ['wolf'] : [];
     return ['day'];
   }
 
   voiceFor(me) {
-    const members = this.players.filter((q) => q.voiceOn && q.connected && !q.bot);
+    const members = this.humans().filter((q) => q.voiceOn && q.connected);
     const myTalk = this.voiceTalkGroup(me);
     const myHear = this.voiceHearGroups(me);
     const talkTo = [];
@@ -233,11 +281,14 @@ class Room {
   }
 
   canSee(p, msg) {
+    const god = p.spectator && this.settings.spectatorGodView;
     if (msg.ch === 'all') return true;
-    if (msg.ch === 'wolf') return isWolf(p.role) || this.phase === 'ended';
-    if (msg.ch === 'dead') return !p.alive || this.phase === 'ended';
+    if (msg.ch === 'spec') return !!p.spectator || this.phase === 'ended';
+    if (msg.ch === 'wolf') return isWolf(p.role) || god || this.phase === 'ended';
+    if (msg.ch === 'dead') return (!p.alive && !p.spectator) || god || this.phase === 'ended';
     return false;
   }
+
 
   // ---------- 流程控制 ----------
   runStep(step, seconds, minSeconds = 0) {
@@ -684,6 +735,7 @@ class Room {
     this.players.forEach((p) => { p.role = null; p.alive = true; });
     // 離線的人在回到大廳時移除
     this.players = this.players.filter((p) => p.connected);
+    this.spectators = this.spectators.filter((p) => p.connected);
     this.reseat();
     this.resetGameState();
     this.log = [];
@@ -692,10 +744,16 @@ class Room {
 
   // ---------- 玩家操作 ----------
   act(pid, a) {
-    const p = this.get(pid);
-    if (!p) throw new Error('找不到玩家');
-    const target = a.target ? this.get(a.target) : null;
     const isHost = pid === this.hostId;
+    // 旁觀的房主仍可以跳過階段
+    if (a.type === 'skip' && isHost && this.spectator(pid)) {
+      if (this.phase === 'lobby' || this.phase === 'ended') return;
+      if (this.step === 'night_act' || this.step === 'night_witch') throw new Error('夜晚無法跳過');
+      return this.endStep();
+    }
+    const p = this.get(pid);
+    if (!p) throw new Error(this.spectator(pid) ? '旁觀者不能操作遊戲' : '找不到玩家');
+    const target = a.target ? this.get(a.target) : null;
 
     switch (a.type) {
       case 'skip':
@@ -820,12 +878,13 @@ class Room {
 
   // ---------- 每位玩家看到的畫面 ----------
   stateFor(pid) {
-    const me = this.get(pid);
+    const me = this.member(pid);
     const ended = this.phase === 'ended';
     const meWolf = isWolf(me.role);
+    const god = !!me.spectator && !!this.settings.spectatorGodView;
     const players = this.players.map((q) => {
       let role = null;
-      if (ended || q.id === me.id || (meWolf && isWolf(q.role))) role = q.role;
+      if (ended || god || q.id === me.id || (meWolf && isWolf(q.role))) role = q.role;
       else if (this.revealed[q.id]) role = this.revealed[q.id];
       return { id: q.id, name: q.name, seat: q.seat, alive: q.alive, connected: q.connected, bot: !!q.bot, voice: !!q.voiceOn, role };
     });
@@ -856,6 +915,10 @@ class Room {
       lastVote: this.lastVote,
       minPlayers: MIN_PLAYERS,
       maxPlayers: MAX_PLAYERS,
+      spectator: !!me.spectator,
+      godView: god,
+      self: { id: me.id, name: me.name, seat: me.seat, alive: me.alive, spectator: !!me.spectator },
+      spectators: this.spectators.map((q) => ({ id: q.id, name: q.name, connected: q.connected, voice: !!q.voiceOn })),
     };
 
     if (this.step === 'vote') {
@@ -879,4 +942,4 @@ class Room {
   }
 }
 
-module.exports = { Room, ROLES, defaultSetup, MIN_PLAYERS, MAX_PLAYERS };
+module.exports = { Room, ROLES, defaultSetup, MIN_PLAYERS, MAX_PLAYERS, MAX_SPECTATORS };

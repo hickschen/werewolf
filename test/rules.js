@@ -224,6 +224,66 @@ const until = async (room, step) => { for (let i = 0; i < 4000 && room.step !== 
     assert.ok(!r.voiceFor(w1).hearFrom.includes(v.id));
     console.log('✓ 語音權限：狼隊夜聊、出局者只能聽、遺言可說');
   }
+  // 11. 旁觀模式
+  {
+    const r = await setupRoom(['werewolf', 'werewolf', 'seer', 'villager', 'villager', 'villager', 'witch', 'villager']);
+    const spec = r.addSpectator('觀眾');
+    assert.throws(() => r.addSpectator('觀眾'), /暱稱/);
+    await until(r, 'night_act');
+    // 看不到身分、不能操作、狼隊頻道看不到
+    let st = r.stateFor(spec.id);
+    assert.ok(st.spectator && !st.godView);
+    assert.ok(st.players.every((p) => p.role === null), '旁觀者預設看不到身分');
+    assert.throws(() => r.act(spec.id, { type: 'wolfVote', target: r.players[3].id }), /旁觀/);
+    const w = r.players[0];
+    r.say(w.id, '狼隊密談');
+    assert.ok(!r.stateFor(spec.id).chat.some((m) => m.ch === 'wolf'));
+    // 旁觀頻道：玩家看不到
+    r.say(spec.id, '旁觀者聊天');
+    assert.strictEqual(r.chat[r.chat.length - 1].ch, 'spec');
+    assert.ok(r.players.every((p) => !r.stateFor(p.id).chat.some((m) => m.ch === 'spec')), '玩家看不到旁觀頻道');
+    // 語音：晚上聽不到狼隊、不能說
+    r.players.forEach((p) => (p.voiceOn = true)); spec.voiceOn = true;
+    let vs = r.voiceFor(spec);
+    assert.strictEqual(vs.mode, null); assert.deepStrictEqual(vs.hearFrom, []);
+    assert.ok(!r.voiceFor(w).talkTo.includes(spec.id));
+    // 上帝視角
+    r.settings.spectatorGodView = true;
+    st = r.stateFor(spec.id);
+    assert.ok(st.godView && st.players.every((p) => p.role), '上帝視角看得到所有身分');
+    assert.ok(st.chat.some((m) => m.ch === 'wolf'), '上帝視角看得到狼隊頻道');
+    r.settings.spectatorGodView = false;
+    // 旁觀的房主可以跳過白天階段
+    r.hostId = spec.id;
+    r.players.filter((p) => p.role === 'werewolf').forEach((x) => r.act(x.id, { type: 'wolfVote', target: null }));
+    r.act(P(r, 'seer').id, { type: 'seerCheck', target: w.id });
+    await until(r, 'night_witch');
+    r.act(P(r, 'witch').id, { type: 'witch', skip: true });
+    await until(r, 'discuss');
+    vs = r.voiceFor(spec);
+    assert.strictEqual(vs.mode, null); assert.strictEqual(vs.hearFrom.length, 8, '旁觀者白天聽得到所有存活玩家');
+    const sp = r.speaker;
+    r.act(spec.id, { type: 'skip' });
+    await sleep(5);
+    assert.notStrictEqual(r.speaker, sp, '旁觀房主可以跳過發言');
+    assert.throws(() => r.setSpectator(spec.id, false), /回到大廳/);
+    console.log('✓ 旁觀者：看不到身分、不能操作、旁觀頻道獨立、語音只聽白天、上帝視角、旁觀房主可跳過');
+  }
+  // 12. 大廳切換玩家／旁觀
+  {
+    const { Room: R } = require('../game');
+    const r = new R('1', () => {});
+    const a = r.addPlayer('A'); const b = r.addPlayer('B'); r.addPlayer('C');
+    r.setSpectator(b.id, true);
+    assert.strictEqual(r.players.length, 2); assert.strictEqual(r.spectators.length, 1);
+    assert.deepStrictEqual(r.players.map((p) => p.seat), [1, 2]);
+    r.setSpectator(b.id, false);
+    assert.strictEqual(r.players.length, 3); assert.strictEqual(b.seat, 3); assert.ok(b.alive && !b.spectator);
+    r.setSpectator(a.id, true);
+    r.setConnected(a.id, false);
+    assert.notStrictEqual(r.hostId, a.id, '房主離線會轉移');
+    console.log('✓ 大廳可以在玩家與旁觀之間切換');
+  }
   console.log('ALL RULE TESTS PASSED');
   process.exit(0);
 })().catch((e) => { console.error('FAIL', e.message); process.exit(1); });
