@@ -13,7 +13,19 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { pingInterval: 10000, pingTimeout: 20000 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// 首頁：每次都重新取得，並在 css/js 後面加上版本號，避免瀏覽器混用新舊檔案
+const VERSION = process.env.GAME_VERSION || String(Date.now());
+const fs = require('fs');
+function sendIndex(req, res) {
+  let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+  html = html.replace(/(href|src)="(style\.css|voice\.js|app\.js)"/g, `$1="$2?v=${VERSION}"`)
+    .replace('</head>', `  <meta name="game-version" content="${VERSION}" />\n</head>`);
+  res.set('Cache-Control', 'no-store').type('html').send(html);
+}
+app.get(['/', '/index.html'], sendIndex);
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, file) => { if (/\.(js|css)$/.test(file)) res.set('Cache-Control', 'no-cache'); },
+}));
 app.get('/qr', async (req, res) => {
   try {
     const svg = await QRCode.toString(String(req.query.text || '').slice(0, 300), { type: 'svg', margin: 1 });
@@ -91,7 +103,7 @@ app.post('/admin/api/check', localOnly, express.json(), (req, res) => {
 });
 const startedAt = Date.now();
 
-app.get('/api/version', (req, res) => res.json({ version: process.env.GAME_VERSION || 'dev' }));
+app.get('/api/version', (req, res) => res.json({ version: process.env.GAME_VERSION || 'dev', build: VERSION }));
 // 語音連線用的 ICE 伺服器（STUN 免費；如需 TURN 可用環境變數設定）
 app.get('/api/ice', (req, res) => {
   const iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];

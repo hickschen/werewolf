@@ -1,7 +1,10 @@
 /* 月夜狼人殺：前端 */
 (() => {
   'use strict';
-  const $ = (s) => document.querySelector(s);
+  const $ = (s) => document.querySelector(s) || DUMMY;
+  // 找不到元素時用的替身，避免整個畫面因為一個元素不存在而壞掉
+  const DUMMY = { classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, set innerHTML(v) {}, get innerHTML() { return ''; },
+    set textContent(v) {}, get textContent() { return ''; }, style: {}, dataset: {}, addEventListener() {}, scrollTop: 0, scrollHeight: 0, clientHeight: 0, value: '' };
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
   const ROLE = {
@@ -99,6 +102,10 @@
     vote: '投票',
     vote_result: '投票結果',
   };
+
+  // 語音模組載入失敗時的替身，遊戲照常可以玩
+  const Voice = window.Voice || { joined: false, muted: false, speaking: new Set(), peers: new Map(), mic: null,
+    init() {}, update() {}, secure: () => false, supported: () => false, join: async () => { throw new Error('unsupported'); }, leave() {}, toggleMute() {} };
 
   // ---------- 狀態 ----------
   const socket = io({ transports: ['websocket', 'polling'] });
@@ -272,18 +279,22 @@
 
     $('#roomCode').textContent = S.code;
     $('#soundBtn').textContent = sound ? '🔊' : '🔈';
-    renderPhase();
-    renderBanner();
-    renderSetupBar();
-    renderVoiceBar();
-    renderMyRole();
-    renderLobby();
-    renderPlayers();
-    renderActions();
-    renderChat();
-    renderLog();
-    tick();
+    // 每個區塊各自繪製，其中一塊出錯也不影響其他區塊（例如身分卡）
+    for (const f of [renderPhase, renderBanner, renderSetupBar, renderVoiceBar, renderMyRole, renderLobby, renderPlayers, renderActions, renderChat, renderLog, tick]) {
+      try { f(); } catch (e) { console.error('[render]', f.name, e); }
+    }
   }
+
+  // 伺服器更新版本後，自動重新整理頁面，確保大家用的是同一版
+  const PAGE_BUILD = document.querySelector('meta[name="game-version"]')?.content || null;
+  async function checkBuild() {
+    if (!PAGE_BUILD) return;
+    try {
+      const j = await (await fetch('/api/version', { cache: 'no-store' })).json();
+      if (j.build && j.build !== PAGE_BUILD) location.reload();
+    } catch {}
+  }
+  socket.on('connect', checkBuild);
 
   function renderPhase() {
     let t = '';
